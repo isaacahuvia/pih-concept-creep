@@ -1,0 +1,14 @@
+---
+title: "Depression Concept Creep, 2016-2026"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup}
+library(here)
+library(tidyverse)
+
+clean_data <- readRDS(here("Data", "Clean Data.rds"))
+
+knitr::opts_chunk$set(echo = TRUE)
+```
