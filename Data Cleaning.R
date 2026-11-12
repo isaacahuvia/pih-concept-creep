@@ -3,7 +3,6 @@ library(tidyverse)
 library(here)
 library(scales)
 library(lubridate)
-library(tidymodels)
 `%+%` <- paste0
 
 
@@ -12,7 +11,7 @@ library(tidymodels)
 pimh_raw <- read.csv(here("Data", "PIMH - 2012-2019", "261109 PIMH Depression IAT_withRT.csv"))
 
 
-### Filter rows
+### Explore data
 ## US resident status
 pimh_raw %>%
   count(dem_residence %in% c(1, 187), !is.na(dem_residence)) # 1 and 187 are both USA
@@ -61,40 +60,27 @@ pimh_raw %>%
   )
 # A: About the pattern you'd expect. This nets 36k nonmissing responses
 
-## Filter
-# - US residents
-# - Nonmissing self-labeling item
-# - Nonmissing symptom severity items
-# - Asked 2016-onward self-labeling item
-pimh_filtered <- pimh_raw %>%
-  tidylog::drop_na(datetime) %>%
-  tidylog::drop_na(any_of("depression" %+% 1:7)) %>%
-  tidylog::drop_na(mhdem00) %>%
-  tidylog::filter(ymd_hms(datetime) >= mdy("7/16/2016")) %>% # First date with self-labeling data
-  tidylog::filter(ymd_hms(datetime) <= mdy("8/20/2019")) %>% # Last date with real data
-  tidylog::filter(is.na(consentage) | consentage >= 18) %>%
-  tidylog::filter(dem_residence %in% c(1, 187)) # 9,729 otherwise valid responses are non-US or missing (7,847 have a non-missing other country)
-# 22,459 rows remain - a good haul for the old dataset
-
 
 ### Clean columns
-pimh_clean_cols <- pimh_filtered %>%
+pimh_mutated <- pimh_raw %>%
   mutate(
     dataset = "PIMH",
     date = as_date(ymd_hms(datetime)),
     year = year(date),
+    decimal_year = decimal_date(date),
     dep_self_label_now = mhhistory_depressive_current %in% 1,
-    dep_self_label_ever = mhhistory_depressive_current %in% 1 | mhhistory_depressive_past %in% 1,
+    dep_self_label_past = mhhistory_depressive_past %in% 1,
+    dep_self_label_ever = dep_self_label_now | dep_self_label_past,
     dep_dx = mhhistory_depressive_diagnosed %in% 1,
     race = case_when(
-      dem_raceomb == "1" & dem_ethnicityomb == 2 ~ "American Indian or Alaska Native non-Hispanic",
-      dem_raceomb %in% c("2", "3", "2:3", "2:03") & dem_ethnicityomb == 2 ~ "Asian non-Hispanic",
-      dem_raceomb == "5" & dem_ethnicityomb == 2 ~ "Black non-Hispanic",
-      dem_raceomb == "4" & dem_ethnicityomb == 2 ~ "Native Hawaiian or Other Pacific Islander non-Hispanic",
-      dem_raceomb == "6" & dem_ethnicityomb == 2 ~ "White non-Hispanic",
+      dem_raceomb == "1" & !dem_ethnicityomb %in% 1 ~ "American Indian or Alaska Native non-Hispanic",
+      dem_raceomb %in% c("2", "3", "2:3", "2:03") & !dem_ethnicityomb %in% 1 ~ "Asian non-Hispanic",
+      dem_raceomb == "5" & !dem_ethnicityomb %in% 1 ~ "Black non-Hispanic",
+      dem_raceomb == "4" & !dem_ethnicityomb %in% 1 ~ "Native Hawaiian or Other Pacific Islander non-Hispanic",
+      dem_raceomb == "6" & !dem_ethnicityomb %in% 1 ~ "White non-Hispanic",
       dem_ethnicityomb == 1 ~ "Hispanic",
-      dem_raceomb == 7 | dem_ethnicityomb == 3 ~ "Other or Unknown",
-      !is.na(dem_raceomb) & !is.na(dem_ethnicityomb) ~ "Other or Unknown",
+      dem_raceomb == "7" | grepl(":", dem_raceomb) | dem_ethnicityomb == 3 ~ "Multiracial, Other or Unknown",
+      !is.na(dem_raceomb) & !is.na(dem_ethnicityomb) ~ "Multiracial, Other or Unknown",
       T ~ NA_character_
     ),
     gender = recode_values(
@@ -127,26 +113,44 @@ pimh_clean_cols <- pimh_filtered %>%
     zip = if_else(grepl("^[0-9]{5}$", dem_zipcode), dem_zipcode, NA_character_),
     response_time = rowSums(across(ends_with("rt") & !ends_with("trt")), na.rm = TRUE) / 60000
   ) %>%
-  # Take mean DASS-21 depression subscale score. All items here have ranges of 1:4, so subtract 7
+  # Take sum DASS-21 depression subscale score. All items here have ranges of 1:4, so subtract 7
   rowwise() %>%
   mutate(depression_sum = sum(c_across(all_of("depression" %+% 1:7))) - 7) %>%
   ungroup() %>%
   select(
-    dataset, date, year,
-    dep_self_label_now, dep_self_label_ever, dep_dx,
+    dataset, date, year, decimal_year,
+    starts_with("dep_self_label"), dep_dx,
     all_of("depression" %+% 1:7), depression_sum,
-    age = consentage, race, gender, education, political_id, zip,
-    response_time
+    age = consentage, race, gender, education, political_id, zip, country = dem_residence,
+    response_time, saw_dep_self_label = mhdem00
   )
+
+
+### Filter rows
+pimh_filtered <- pimh_mutated %>%
+  tidylog::drop_na(date) %>% # Non-missing date
+  tidylog::drop_na(all_of("depression" %+% 1:7)) %>% # Non-missing depression items
+  tidylog::drop_na(saw_dep_self_label) %>% # Saw self-labeling item
+  tidylog::filter(date >= mdy("7/16/2016")) %>% # First date with self-labeling data
+  tidylog::filter(date <= mdy("8/20/2019")) %>% # Last date with real data
+  tidylog::filter(is.na(age) | age >= 18) %>% # Adults
+  tidylog::filter(country %in% c(1, 187)) %>% # US residents; 9,729 otherwise valid responses are non-US or missing (7,847 have a non-missing other country)
+  tidylog::filter(age <= 80 | is.na(age)) %>% # (Likely) valid age data
+  tidylog::filter(response_time >= .5) # Minimum response time
+# 22,469 rows remain
+
+
+### Save data
+saveRDS(pimh_filtered, here("Data", "PIMH - 2012-2019", "pimh_clean.rds"))
 
 
 
 #### PIH: 2019-Present
 ### Load data
-pih_raw <- read.csv(here("Data", "PIH - 2019-current", "261109 PIH Depression IAT_withRT.csv"))
+pih_raw <- read.csv(here("Data", "PIH - 2019-Current", "261109 PIH Depression IAT_withRT.csv"))
 
 
-### Filter rows
+### Explore data
 ## US resident status
 pih_raw %>%
   count(countryres == 1) # In PIH, only 1 is USA
@@ -189,37 +193,27 @@ pih_raw %>%
   )
 # A: About the pattern you'd expect. This nets 46k nonmissing responses
 
-## Filter
-# - US residents
-# - Nonmissing self-labeling item
-# - Nonmissing symptom severity items
-pih_filtered <- pih_raw %>%
-  tidylog::drop_na(any_of("depression" %+% 1:7)) %>%
-  tidylog::filter(!currentmhhx %in% c("", " ", "-999")) %>%
-  tidylog::filter(countryres == 1) %>%
-  tidylog::filter(is.na(age1) | age1 >= 18) %>%
-  tidylog::filter(ymd_hms(date) >= mdy("8/21/2019"))
-# 37,183 rows remain - great!
-
 
 ### Clean columns
-pih_clean_cols <- pih_filtered %>%
+pih_mutated <- pih_raw %>%
   mutate(
     dataset = "PIH",
-    date = ymd_hms(date),
+    date = as_date(ymd_hms(date)),
     year = year(date),
-    dep_self_label_now = grepl("11", currentmhhx),
-    dep_self_label_ever = grepl("11", currentmhhx) | grepl("11", pastmhhx),
+    decimal_year = decimal_date(date),
+    dep_self_label_now = if_else(currentmhhx == "", NA, grepl("11", currentmhhx)), # Includes a negligible number of respondents who selected "depression" and "none of the above"
+    dep_self_label_past = if_else(pastmhhx == "", NA, grepl("11", pastmhhx)),
+    dep_self_label_ever = dep_self_label_now | dep_self_label_past,
     age = round(age1),
     race = case_when(
-      raceombmulti == "[1]" & ethnicityomb == 2 ~ "American Indian or Alaska Native non-Hispanic",
-      raceombmulti %in% c("[2]", "[3]", "[2,3]") & ethnicityomb == 2 ~ "Asian non-Hispanic",
-      raceombmulti == "[5]" & ethnicityomb == 2 ~ "Black non-Hispanic",
-      raceombmulti == "[4]" & ethnicityomb == 2 ~ "Native Hawaiian or Other Pacific Islander non-Hispanic",
-      raceombmulti == "[6]" & ethnicityomb == 2 ~ "White non-Hispanic",
+      raceombmulti == "[1]" & !ethnicityomb %in% 1 ~ "American Indian or Alaska Native non-Hispanic",
+      raceombmulti %in% c("[2]", "[3]", "[2,3]") & !ethnicityomb %in% 1 ~ "Asian non-Hispanic",
+      raceombmulti == "[5]" & !ethnicityomb %in% 1 ~ "Black non-Hispanic",
+      raceombmulti == "[4]" & !ethnicityomb %in% 1 ~ "Native Hawaiian or Other Pacific Islander non-Hispanic",
+      raceombmulti == "[6]" & !ethnicityomb %in% 1 ~ "White non-Hispanic",
       ethnicityomb == 1 ~ "Hispanic",
-      raceombmulti == 7 | ethnicityomb == 3 ~ "Other or Unknown",
-      !is.na(raceombmulti) & !is.na(ethnicityomb) ~ "Other or Unknown",
+      raceombmulti == "[7]" | ethnicityomb == 3 ~ "Multiracial, Other or Unknown",
+      !is.na(raceombmulti) & !is.na(ethnicityomb) ~ "Multiracial, Other or Unknown",
       T ~ NA_character_
     ),
     gender = case_when(
@@ -249,7 +243,6 @@ pih_clean_cols <- pih_filtered %>%
         "Strongly Conservative"),
       ordered = T
     ),
-    subjective_ses = ses, #TBD
     referral = broughtwebsite %>%
       replace_values(c("", "null") ~ NA),
     zip = if_else(grepl("^[0-9]{5}$", zipcode), zipcode, NA_character_),
@@ -259,28 +252,60 @@ pih_clean_cols <- pih_filtered %>%
       "iatevaluations002rt", "iatevaluations003rt", "iatevaluationsrt"
     )), na.rm = TRUE) / 60000
   ) %>%
-  # Take mean DASS-21 depression subscale score. All items here have ranges of 1:4, so subtract 7
+  # Take sum DASS-21 depression subscale score. All items here have ranges of 1:4, so subtract 7
   rowwise() %>%
   mutate(depression_sum = sum(c_across(all_of("depression" %+% 1:7))) - 7) %>%
   ungroup() %>%
   select(
-    dataset, date, year,
-    dep_self_label_now, dep_self_label_ever,
+    user_id, session_id, dataset, date, year, decimal_year,
+    starts_with("dep_self_label"),
     all_of("depression" %+% 1:7), depression_sum,
-    age, race, gender, education, political_id, subjective_ses, referral, zip,
+    age, race, gender, education, political_id, referral, zip, country = countryres,
     response_time
   )
 
 
+### Filter rows
+## Filter responses
+pih_filtered <- pih_mutated %>%
+  tidylog::drop_na(all_of("depression" %+% 1:7)) %>% # Non-missing depression items
+  tidylog::drop_na(dep_self_label_now) %>% # Non-missing self-labeling item
+  tidylog::filter(country == 1) %>% # US residents
+  tidylog::filter(is.na(age) | age >= 18) %>% # Adults
+  tidylog::filter(date >= mdy("8/21/2019")) %>% # After PIH launch
+  tidylog::filter(age <= 80 | is.na(age)) %>% # (Likely) valid age data
+  tidylog::filter(response_time >= 1) # Minimum response time
+# 37,138 rows remain
 
-#### Combine datasets
-clean_data <- bind_rows(
-  pimh_clean_cols,
-  pih_clean_cols
+## Deduplicate
+# Where possible, filter repeat responses from the same ID. Only 3,435 (3%) of raw
+# PIH responses come from registered accounts. Of these, 708 (21%) responses are
+# from accounts with more than one response. Of valid (i.e., otherwise included)
+# responses from these accounts, keep only the first one.
+duplicate_responses <- pih_filtered %>%
+  arrange(user_id, date) %>%
+  filter(
+    user_id != -1,
+    duplicated(user_id)
+  ) %>%
+  pull(session_id)
+
+pih_deduplicated <- pih_filtered %>%
+  tidylog::filter(!session_id %in% duplicate_responses)
+# 37,109 rows remain
+
+
+### Save data
+saveRDS(pih_deduplicated, here("Data", "PIH - 2019-Current", "pih_clean.rds"))
+
+
+
+#### Sanity checks
+## Combine datasets for sanity checks (not done in analysis)
+combined_data <- bind_rows(
+  pimh_filtered,
+  pih_deduplicated
 ) %>%
-  # Data quality filter
-  tidylog::filter(age <= 85 | is.na(age)) %>%
-  tidylog::filter(if_else(dataset == "PIH", response_time >= 1, response_time >= .5)) %>%
   # Recode certain demographic variables to examine change over time
   mutate(
     race_recoded = replace_values(
@@ -292,8 +317,8 @@ clean_data <- bind_rows(
       c(
         "American Indian or Alaska Native non-Hispanic",
         "Native Hawaiian or Other Pacific Islander non-Hispanic",
-        "Other or Unknown"
-      ) ~ "Other or Unknown",
+        "Multiracial, Other or Unknown"
+      ) ~ "Multiracial, Other or Unknown",
       NA ~ NA
     ),
     gender_recoded = replace_values(
@@ -310,16 +335,15 @@ clean_data <- bind_rows(
   )
 
 
-
-#### Sanity checks
 ## Symptom severity distributions compared to DASS-21 norms: see DASS vs Norms.R
 source(here("DASS vs Norms.R"))
-dass21_dep_compare(clean_data, depression_sum)
-dass21_dep_compare(clean_data, depression_sum, group = dataset)
-dass21_dep_compare(clean_data, depression_sum, group = year)
+dass21_dep_compare(combined_data, depression_sum)
+dass21_dep_compare(combined_data, depression_sum, group = dataset)
+dass21_dep_compare(combined_data, depression_sum, group = year)
+
 
 ## Missingness
-clean_data %>%
+combined_data %>%
   group_by(dataset) %>%
   summarise(across(everything(), ~ percent(mean(is.na(.x)), .1)), .groups = "drop") %>%
   pivot_longer(-dataset, names_to = "variable", values_to = "prop_missing") %>%
@@ -330,8 +354,9 @@ clean_data %>%
   ) %>%
   print(n = nrow(.))
 
+
 ## Self-labeling counts
-clean_data %>%
+combined_data %>%
   mutate(year = year(date)) %>%
   count(dataset, year, dep_self_label_now) %>%
   group_by(dataset, year) %>%
@@ -350,7 +375,7 @@ clean_data %>%
 
 
 ## Density of self-labeling by symptom severity by dataset
-clean_data %>%
+combined_data %>%
   ggplot(aes(x = depression_sum, group = dep_self_label_now, fill = dep_self_label_now)) +
   geom_density(alpha = .25) +
   facet_wrap(~ dataset)
@@ -358,7 +383,8 @@ clean_data %>%
 
 
 ## Self-labeling vs diagnosis
-clean_data %>%
+combined_data %>%
+  filter(dataset == "PIMH") %>%
   group_by(dataset, year) %>%
   summarize(
     n = n(),
@@ -377,7 +403,7 @@ pct_in <- function(x, levels) {
   percent(mean(x %in% levels), .1)
 }
 
-change_by_year <- clean_data %>%
+change_by_year <- combined_data %>%
   mutate(year = year(date)) %>%
   group_by(dataset, year) %>%
   summarise(
@@ -397,7 +423,6 @@ change_by_year <- clean_data %>%
     # Means
     mean_age            = round(mean(age, na.rm = TRUE), 1),
     mean_political_id   = round(mean(as.numeric(political_id), na.rm = TRUE), 2),
-    mean_subjective_ses = round(mean(subjective_ses, na.rm = TRUE), 2),
 
     # Education: college+ vs. no college degree
     pct_hs_or_less = pct_in(education, c("High School or Less")),
@@ -416,7 +441,7 @@ change_by_year <- clean_data %>%
 change_by_year %>% select(dataset, year, n, mean_age)
 
 aov(
-  data = clean_data,
+  data = combined_data,
   formula = date ~ age
 ) %>% summary()
 
@@ -424,7 +449,7 @@ aov(
 change_by_year %>% select(dataset, year, n, pct_man, pct_woman, pct_tgd)
 
 aov(
-  data = clean_data,
+  data = combined_data,
   formula = date ~ gender_recoded
 ) %>% summary()
 
@@ -432,7 +457,7 @@ aov(
 change_by_year %>% select(dataset, year, n, pct_white:pct_asian)
 
 aov(
-  data = clean_data,
+  data = combined_data,
   formula = date ~ race_recoded
 ) %>% summary()
 
@@ -440,7 +465,7 @@ aov(
 change_by_year %>% select(dataset, year, n, pct_hs_or_less:pct_graduate)
 
 aov(
-  data = clean_data,
+  data = combined_data,
   formula = date ~ education
 ) %>% summary()
 
@@ -448,37 +473,30 @@ aov(
 change_by_year %>% select(dataset, year, n, pct_referral_school)
 
 aov(
-  data = clean_data,
+  data = combined_data,
   formula = date ~ referral_recoded
 ) %>% summary()
 
 # All together
 aov(
-  data = clean_data,
+  data = combined_data,
   formula = as.numeric(date) ~ age + race_recoded + gender_recoded + education
 ) %>% summary()
 
 # With directionality
 lm(
-  data = clean_data,
+  data = combined_data,
   formula = as.numeric(date) ~ age + race_recoded + gender_recoded + education
 ) %>% summary()
 
 
 ## Change in self-labeling item wording
-plot_data <- clean_data %>%
-  filter(
-    date >= as.Date("2017-01-01"),
-    date <= as.Date("2020-12-31")
-  ) %>%
+by_month <- combined_data %>%
   mutate(
     dep_self_label_now = as.numeric(dep_self_label_now),
-    pre_post = factor(year >= 2019)
-  )
-
-by_month <- plot_data %>%
-  mutate(month = format(date, "%Y-%m")) %>%
-  group_by(pre_post, month) %>%
+    month = format(date, "%Y-%m")
+  ) %>%
+  group_by(dataset, month) %>%
   summarize(
     month_midpoint = mean(date),
     p = mean(dep_self_label_now),
@@ -486,22 +504,17 @@ by_month <- plot_data %>%
     .groups = "drop"
   )
 
-ggplot(plot_data, aes(date, dep_self_label_now, color = pre_post, fill = pre_post)) +
-  geom_point(data = by_month, aes(x = month_midpoint, y = p, size = n), alpha = .5) +
+by_month %>%
+  ggplot(aes(x = month_midpoint, y = p, size = n, group = dataset, color = dataset)) +
+  geom_point(alpha = .5) +
   scale_size_area(max_size = 4, guide = "none") +
   scale_x_date(date_breaks = "6 months", date_labels = "%b\n%Y") +
   scale_y_continuous(labels = scales::label_percent()) +
   labs(
     title = "Depression self-labeling by response date",
     x = NULL, y = "% currently self-labeling as depressed",
-    color = "Revised Item", fill = "Revised Item"
+    color = "Dataset"
   ) +
   theme_minimal() +
   theme(legend.position = "top")
-# There isn't an obvious discontinuity here; could be safe to combine. Start with
-# two different analyses, but it could very well be worth combining them.
-
-
-
-#### Save Data
-saveRDS(clean_data, here("Data", "Clean Data.rds"))
+# There seems to be some discontinuity here; important argument against pooling
