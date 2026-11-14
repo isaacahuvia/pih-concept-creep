@@ -2,13 +2,449 @@
 title: "Depression Concept Creep, 2016-2026"
 output: html_document
 date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup}
+## Set chunk options
+knitr::opts_chunk$set(
+  cache.extra = tools::md5sum(c(
+    here::here("Data", "PIMH - 2012-2019", "pimh_with_geo.rds"),
+    here::here("Data", "PIH - 2019-Current", "pih_with_geo.rds")
+  ))
+) # Some chunks cache objects; reset them if data changes
+
+
+## Set seed
+set.seed(87204)
+
+
+## Load packages
 library(here)
+library(knitr)
+library(kableExtra)
+library(broom)
+library(scales)
+library(ggh4x)
+library(mice)
+library(marginaleffects)
 library(tidyverse)
+`%+%` <- paste0
 
-clean_data <- readRDS(here("Data", "Clean Data.rds"))
 
-knitr::opts_chunk$set(echo = TRUE)
+## Load helper functions
+source(here("Helper Functions", "Analysis Functions.R"))
+
+
+## Load data
+# Non-imputed datasets ("_ni")
+pimh_ni <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_with_geo.rds"))
+pih_ni <- readRDS(here("Data", "PIH - 2019-Current", "pih_with_geo.rds"))
+all_ni <- bind_rows(pimh, pih) # Combine non-imputed datasets for some exploratory analyses
+
+# Imputed ("_i")
+pimh_i <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_imputed.rds"))
+pih_i <- readRDS(here("Data", "PIH - 2019-Current", "pih_imputed.rds"))
+
+# Completed ("_c")
+pimh_c <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_completed.rds"))
+pih_c <- readRDS(here("Data", "PIH - 2019-Current", "pih_completed.rds"))
+all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
+
+# Stacked datasets ("_s")
+pimh_s <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_stacked.rds"))
+pih_c <- readRDS(here("Data", "PIH - 2019-Current", "pih_stacked.rds"))
+all_c <- readRDS(here("Data", "PIMH + PIH Combined", "pih_stacked.rds"))
 ```
+
+# 1. Sample Description
+
+## 1.1. Sample Description Table
+
+```{r sample-description-table}
+
+```
+
+## 1.2. Depression Symptom Severity Versus Norms
+
+```{r depression-vs-norms}
+
+```
+
+## 1.3. Trends in Outcomes
+
+Trends in self-labeling and depressive symptom severity over time in the raw data; this is important historical context for our research questions, and it also allows us to examine the functional form of our models below.
+
+```{r descriptive-trends}
+combined %>%
+  mutate(
+    dataset = factor(dataset, levels = c("PIMH", "PIH")),
+    `% currently self-labeling` = 100 * dep_self_label_now,
+    `Mean DASS-21 depression sum` = depression_sum
+  ) %>%
+  pivot_longer(
+    c(`% currently self-labeling`, `Mean DASS-21 depression sum`),
+    names_to = "measure", values_to = "value"
+  ) %>%
+  ggplot(aes(x = decimal_year, y = value)) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 4)) +
+  facet_grid(measure ~ dataset, scales = "free", space = "free_x", switch = "y") +
+  facetted_pos_scales(y = list(
+    measure == "% currently self-labeling" ~ scale_y_continuous(limits = c(20, 40)),
+    measure == "Mean DASS-21 depression sum" ~ scale_y_continuous(limits = c(4, 8))
+  )) +
+  scale_x_continuous(breaks = 2016:2026, expand = expansion(add = 0.1)) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(strip.placement = "outside")
+```
+
+From these plots a few things are apparent:
+* There is a significant discontinuity when data collection switched from PIMH to PIH; the sample got slightly less depressed.
+* Depression symptom severity in our sample matches nationwide trends in young adults; rising over time, peaking during the pandemic, and reducing afterwards.
+* Depression self-labeling follows a similar trend. If you look closely, you can see the self-labeling trends are slightly "tilted" upwards, i.e., have a stronger slope; that is reflected in the modeling below.
+
+These plots give us a good sense of general trends, but it's hard to examine functional form from this. These plots do a better job; they're the raw data equivalent of the model plots below.
+
+## 1.4. Functional Form, Visually
+
+```{r examine-functional-form}
+## Self-labeling by symptom severity by year
+combined %>%
+  mutate(dataset = factor(dataset, levels = c("PIMH", "PIH"))) %>%
+  ggplot(aes(x = depression_sum, y = as.numeric(dep_self_label_now), color = year, group = year)) +
+  geom_smooth(method = "loess", se = F, linewidth = .7) +  
+  facet_wrap(~ dataset) +
+  scale_color_viridis_c(breaks = 2016:2026) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(x = "DASS-21 depression sum", y = "% currently self-labeling", color = NULL) +
+  theme_minimal()
+
+## Self-labeling by year by symptom severity
+# Label severity bands
+severity_labels <- c("Mild (DASS 5-6)", "Moderate (DASS 7-10)", "Severe (DASS 11-13)")
+
+# Create severity-banded data
+banded <- combined %>%
+  mutate(
+    dataset = factor(dataset, levels = c("PIMH", "PIH")),
+    severity = case_when(
+      between(depression_sum, 5, 6)   ~ severity_labels[1],
+      between(depression_sum, 7, 10)  ~ severity_labels[2],
+      between(depression_sum, 11, 13) ~ severity_labels[3]
+    ),
+    severity = factor(severity, levels = severity_labels),
+    dep_self_label_now = as.numeric(dep_self_label_now)
+  ) %>%
+  filter(!is.na(severity))
+
+# Summarize by year
+by_year <- banded %>%
+  group_by(dataset, severity, year) %>%
+  summarize(x = mean(decimal_year), p = mean(dep_self_label_now), n = n(), .groups = "drop")
+
+# Plot
+ggplot(banded, aes(x = decimal_year, y = dep_self_label_now, color = severity)) +
+  geom_smooth(method = "loess", se = F, linewidth = .7) +  
+  geom_point(data = by_year, aes(x = x, y = p, size = n), alpha = 0.6) +
+  facet_grid(. ~ dataset, scales = "free_x", space = "free_x") +
+  scale_x_continuous(breaks = 2016:2026, expand = expansion(add = 0.1)) +
+  scale_y_continuous(labels = scales::label_percent(), limits = c(0, 1)) +
+  scale_size_area(max_size = 3, guide = "none") +
+  labs(x = NULL, y = "% currently self-labeling", color = NULL) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+These trends look monotonous (and perhaps linear) at lower levels of depressive symptoms, but less so at higher There may be a significant interaction effect in the PIMH sample.
+
+## 1.5. Functional Form, Tested
+
+```{r test-functional-form}
+# Quadratic or cubic terms for time?
+combined_completed %>%
+  fit_models(dep_self_label_now ~ depression_sum + poly(decimal_year_centered, 2) + age + race_recoded + gender + education + dataset) %>%
+  summarize_models()
+
+combined_completed %>%
+  fit_models(dep_self_label_now ~ depression_sum + poly(decimal_year_centered, 3) + age + race_recoded + gender + education + dataset) %>%
+  summarize_models()
+# No; relationship between time and self-labeling is linear on the log scale (as seen in plots above)
+
+# Quadratic or cubic terms for depression symptom severity?
+combined_model_dep1 <- combined_completed %>%
+  fit_models(dep_self_label_now ~ depression_sum + decimal_year_centered + age + race_recoded + gender + education + dataset)
+summarize_models(combined_model_dep1)
+
+combined_model_dep2 <- combined_completed %>%
+  fit_models(dep_self_label_now ~ poly(depression_sum, 2) + decimal_year_centered + age + race_recoded + gender + education + dataset)
+summarize_models(combined_model_dep2)
+
+combined_model_dep3 <- combined_completed %>%
+  fit_models(dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education + dataset)
+summarize_models(combined_model_dep3)
+
+combined_model_dep4 <- combined_completed %>%
+  fit_models(dep_self_label_now ~ poly(depression_sum, 4) + decimal_year_centered + age + race_recoded + gender + education + dataset)
+summarize_models(combined_model_dep4)
+
+# They are certainly significant - but do they make a difference for our predictions and ratios?
+point_predictions(combined_model_dep1, c(2019, 2026))
+point_predictions(combined_model_dep2, c(2019, 2026))
+point_predictions(combined_model_dep3, c(2019, 2026))
+point_predictions(combined_model_dep4, c(2019, 2026))
+# Also yes (up to cubic)
+
+# For risk ratios?
+risk_ratios(combined_model_dep1)
+risk_ratios(combined_model_dep2)
+risk_ratios(combined_model_dep3)
+risk_ratios(combined_model_dep4)
+# Not really (a good sign for the robustness of our)
+
+# Do they fit better, per BIC?
+mean_bic <- function(fit_models) map_dbl(fit_models$analyses, BIC) %>% mean()
+mean_bic(combined_model_dep1)
+mean_bic(combined_model_dep2)
+mean_bic(combined_model_dep3)
+mean_bic(combined_model_dep4)
+# Again, yes, up to cubic
+
+# Interaction between time (centered around 2021) and depression symptom severity?
+combined_model_year_by_dep1 <- fit_models(combined_completed, dep_self_label_now ~ depression_sum * decimal_year_centered + age + race_recoded + gender + education + dataset)
+combined_model_year_by_dep2 <- fit_models(combined_completed, dep_self_label_now ~ poly(depression_sum, 2) * decimal_year_centered + age + race_recoded + gender + education + dataset)
+combined_model_year_by_dep3 <- fit_models(combined_completed, dep_self_label_now ~ poly(depression_sum, 3) * decimal_year_centered + age + race_recoded + gender + education + dataset)
+combined_model_year_by_dep4 <- fit_models(combined_completed, dep_self_label_now ~ poly(depression_sum, 4) * decimal_year_centered + age + race_recoded + gender + education + dataset)
+
+# Are the terms significant?
+summarize_models(combined_model_year_by_dep1, exp = F)
+summarize_models(combined_model_year_by_dep2, exp = F)
+summarize_models(combined_model_year_by_dep3, exp = F)
+
+# Do they change predictions?
+point_predictions(combined_model_year_by_dep1, c(2016, 2026), print = T)
+point_predictions(combined_model_year_by_dep2, c(2016, 2026), print = T)
+point_predictions(combined_model_year_by_dep3, c(2016, 2026), print = T)
+
+# Do they change risk ratios?
+risk_ratios(combined_model_year_by_dep1, print = T)
+risk_ratios(combined_model_year_by_dep2, print = T)
+risk_ratios(combined_model_year_by_dep3, print = T)
+
+# Do they improve fit, per BIC?
+mean_bic(combined_model_year_by_dep1)
+mean_bic(combined_model_year_by_dep2)
+mean_bic(combined_model_year_by_dep3)
+mean_bic(combined_model_year_by_dep4)
+# All also point to an interaction at the cubic level
+```
+
+# 2. Primary Analysis
+
+The preregistered primary analysis model is `dep_self_label_now ~ depression_sum + decimal_year + age + race + gender + education`.
+
+Per the above analyses, the functional form is better represented by the functions:
+* PIMH: `...`
+* PIH: `...`
+* Combined: `...`
+
+For the primary analysis, we use the best-fit functions above. We report findings from simpler, preregistered models in `Supporting Analyses.Rmd`.
+
+## 2.1. Primary Regression Results
+
+```{r primary-regressions}
+# PIMH
+pimh_model_primary <- fit_models(pimh_completed, dep_self_label_now ~ depression_sum + decimal_year + age + race_recoded + gender + education)
+summarize_models(pimh_model_primary)
+point_predictions(pimh_model_primary, 2016:2019)
+risk_ratios(pimh_model_primary)
+
+# PIH
+pih_model_primary <- fit_models(pih_completed, dep_self_label_now ~ depression_sum + decimal_year + age + race_recoded + gender + education)
+summarize_models(pih_model_primary)
+point_predictions(pih_model_primary, 2019:2026)
+risk_ratios(pih_model_primary)
+
+# Combined, best-fit (i.e., incorporates above considerations)
+best_fit_model_base <- "dep_self_label_now ~ poly(depression_sum, 3) * decimal_year_centered + age + race_recoded + gender + education + dataset"
+combined_model_primary <- fit_models(combined_completed, as.formula(best_fit_model_base))
+summarize_models(combined_model_primary)
+point_predictions(combined_model_primary, c(2016, 2026), print = T)
+risk_ratios(combined_model_primary, print = T)
+```
+
+### 2.1.1. Primary Regression Results, Visualized
+
+```{r primary-regressions-visualized}
+## Shared settings
+severity_labels <- c(
+  "5.5" = "Low (DASS = 5.5)",
+  "8.5" = "Medium (DASS = 8.5)",
+  "12"  = "High (DASS = 12)"
+)
+
+label_severity <- function(x) factor(severity_labels[as.character(x)], levels = severity_labels)
+
+label_study_period <- function(dataset) {
+  recode_values(
+    dataset,
+    "PIMH" ~ "2016-2019 Study Period",
+    "PIH" ~ "2019-2026 Study Period"
+  )
+}
+
+transition_date <- decimal_date(as_date("2019-08-21")) # First day of PIH data
+
+
+## Plot 1: Separate models, faceted by study period
+pred_by_period <- bind_rows(
+  as_tibble(pred_pimh) %>% mutate(dataset = "PIMH"),
+  as_tibble(pred_pih) %>% mutate(dataset = "PIH")
+) %>%
+  mutate(
+    study_period = label_study_period(dataset),
+    severity = label_severity(depression_sum)
+  )
+
+pred_by_period %>%
+  ggplot(aes(x = decimal_year, y = estimate, color = severity, fill = severity)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = .2, color = NA) +
+  geom_line() +
+  facet_grid(. ~ study_period, scales = "free_x", space = "free_x") +
+  scale_x_continuous(breaks = 2016:2026, expand = expansion(add = .25)) +
+  scale_y_continuous(labels = label_percent(), limits = c(0, NA)) +
+  labs(
+    x = NULL,
+    y = "Predicted probability of self-labeling",
+    color = "Symptom severity",
+    fill = "Symptom severity"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+
+## Plot 2: Combined model
+pred_combined_plot <- as_tibble(pred_combined) %>%
+  mutate(severity = label_severity(depression_sum))
+
+period_labels <- tibble(
+  dataset = c("PIMH", "PIH"),
+  x = c(mean(c(2016, transition_date)), mean(c(transition_date, 2026)))
+) %>%
+  mutate(study_period = label_study_period(dataset))
+
+pred_combined_plot %>%
+  ggplot(aes(x = decimal_year, y = estimate, color = severity, fill = severity)) +
+  geom_vline(xintercept = transition_date, linetype = "dashed", color = "grey50") +
+  geom_text(
+    data = period_labels,
+    aes(x = x, y = Inf, label = study_period),
+    inherit.aes = FALSE, vjust = 1.5, size = 3.5, color = "grey30"
+  ) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = .2, color = NA) +
+  geom_line() +
+  scale_x_continuous(breaks = 2016:2026) +
+  scale_y_continuous(labels = label_percent(), limits = c(0, NA)) +
+  labs(
+    x = NULL,
+    y = "Predicted probability of self-labeling",
+    color = "Symptom severity",
+    fill = "Symptom severity"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+```{r sl-by-ss-by-yr} 
+## Response curve: first vs. last observed date (combined model)
+date_endpoints <- range(combined$decimal_year)
+
+pred_curve <- avg_predictions(
+  model_combined,
+  newdata = datagrid(
+    depression_sum = 0:21,
+    decimal_year = date_endpoints,
+    grid_type = "counterfactual"
+  ),
+  by = c("depression_sum", "decimal_year")
+) %>%
+  as_tibble() %>%
+  mutate(
+    date_label = format(date_decimal(decimal_year), "%B %Y"),
+    date_label = fct_reorder(date_label, decimal_year)
+  )
+
+pred_curve %>%
+  ggplot(aes(x = depression_sum, y = estimate, color = date_label, fill = date_label)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = .2, color = NA) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, 21, 3)) +
+  scale_y_continuous(labels = label_percent(), limits = c(0, 1)) +
+  labs(
+    x = "DASS-21 depression sum",
+    y = "Predicted probability of self-labeling",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+## 2.2. Moderation of Primary Regression Results
+
+Will need to think through age. This is why APC is important. It looks like shifts over time are driven by older participants - but participants are also getting older...! Also this doesn't change that concept breadth is wider for younger people, too... so maybe changing less in this period, but already changed a lot?
+
+```{r, primary-regression-moderation}
+combined_model_moderation_age <- fit_models(combined_completed, as.formula(best_fit_model_base %+% "+ age:decimal_year_centered"))
+risk_ratios(combined_model_moderation_age, moderator = "age", moderator_values = c(20, 40, 60), severity = 8.5, print = T)
+
+combined_model_moderation_race <- fit_models(combined_completed, as.formula(best_fit_model_base %+% "+ race_recoded:decimal_year_centered"))
+risk_ratios(combined_model_moderation_race, moderator = "race_recoded", severity = 8.5, print = T)
+
+combined_model_moderation_gender <- fit_models(combined_completed, as.formula(best_fit_model_base %+% "+ gender:decimal_year_centered"))
+risk_ratios(combined_model_moderation_gender, moderator = "gender", severity = 8.5, print = T)
+
+combined_model_moderation_education <- fit_models(combined_completed, as.formula(best_fit_model_base %+% "+ education:decimal_year_centered"))
+risk_ratios(combined_model_moderation_education, moderator = "education", severity = 8.5, print = T)
+
+combined_model_moderation_dem_vote_share <- fit_models(combined_completed, as.formula(best_fit_model_base %+% "+ dem_vote_share + dem_vote_share:decimal_year_centered"))
+risk_ratios(combined_model_moderation_dem_vote_share, moderator = "dem_vote_share", moderator_values = c(.25, .5, .75), severity = 8.5, print = T)
+```
+
+### 2.2.1. Moderation of Primary Regression Results, Visualized
+
+```{r primary-regression-moderation-visualized}
+
+```
+
+# 3. Secondary Analyses
+
+## 3.1. Concept Breadth by Participant Characteristics
+
+```{r concept-breadth-by-characteristics}
+# Concept breadth by age
+age_comparison <- fit_models(pih_completed, dep_self_label_now ~ depression_sum + age + referral_recoded)
+summarize_models(age_comparison)
+point_predictions(age_comparison, 2016:2019)
+risk_ratios(age_comparison)
+
+pih_stacked %>%
+  group_by()
+```
+
+### 3.1.1. Concept Breadth by Participant Characteristics, Visualized
+
+```{r concept-breadth-by-characteristics-visualized}
+
+```
+
+# 4. Robustness Checks
+
+Robustness checks are reported in the folder `Robustness Checks/`. They include:
+* Primary analyses using simple preregistered models
+* Primary analyses using complete cases
+* Primary analyses controlling for `referral_recoded`
+* Robustness checks around age findings, including:
+  * Age findings, controlling for `referral_recoded`
+  * Age findings, binned (18-22, 25+)

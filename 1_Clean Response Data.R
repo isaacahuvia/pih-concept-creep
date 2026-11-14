@@ -68,6 +68,7 @@ pimh_mutated <- pimh_raw %>%
     date = as_date(ymd_hms(datetime)),
     year = year(date),
     decimal_year = decimal_date(date),
+    decimal_year_centered = decimal_year - 2021,
     dep_self_label_now = mhhistory_depressive_current %in% 1,
     dep_self_label_past = mhhistory_depressive_past %in% 1,
     dep_self_label_ever = dep_self_label_now | dep_self_label_past,
@@ -83,19 +84,44 @@ pimh_mutated <- pimh_raw %>%
       !is.na(dem_raceomb) & !is.na(dem_ethnicityomb) ~ "Multiracial, Other or Unknown",
       T ~ NA_character_
     ),
-    gender = recode_values(
-      dem_sex,
-      1 ~ "Woman",
-      2 ~ "Man"
-    ),
-    education = recode_values(
-      dem_education,
-      1:4 ~ "High School or Less",
-      5 ~ "Some College",
-      6:8 ~ "Undergraduate Degree",
-      9:14 ~ "Graduate Degree",
-      c(-900, NA) ~ NA
-    ),
+    race_recoded = race %>%
+      replace_values(
+        "American Indian or Alaska Native non-Hispanic" ~ "Multiracial, Other or Unknown",
+        "Native Hawaiian or Other Pacific Islander non-Hispanic" ~ "Multiracial, Other or Unknown"
+      ) %>%
+      factor(
+        levels = c(
+          "White non-Hispanic",
+          "Black non-Hispanic",
+          "Asian non-Hispanic",
+          "Hispanic",
+          "Multiracial, Other or Unknown"
+        )
+      ),
+    gender = dem_sex %>%
+      recode_values( # Levels here align with those in PIH, but note that not all will be cisgender!
+        1 ~ "(Cisgender) Woman",
+        2 ~ "(Cisgender) Man"
+      ) %>%
+      fct(
+        levels = c("(Cisgender) Man", "(Cisgender) Woman")
+      ),
+    education = dem_education %>%
+      recode_values(
+        1:4 ~ "High School or Less",
+        5 ~ "Some College",
+        6:8 ~ "Undergraduate Degree",
+        9:14 ~ "Graduate Degree",
+        c(-900, NA) ~ NA
+      ) %>%
+      fct(
+        levels = c(
+          "High School or Less",
+          "Some College",
+          "Undergraduate Degree",
+          "Graduate Degree"
+        )
+      ),
     political_id = dem_socialpoliticalid %>%
       replace_values(-900 ~ NA) %>%
       factor(
@@ -118,10 +144,11 @@ pimh_mutated <- pimh_raw %>%
   mutate(depression_sum = sum(c_across(all_of("depression" %+% 1:7))) - 7) %>%
   ungroup() %>%
   select(
-    dataset, date, year, decimal_year,
+    dataset, date, year, decimal_year, decimal_year_centered,
     starts_with("dep_self_label"), dep_dx,
     all_of("depression" %+% 1:7), depression_sum,
-    age = consentage, race, gender, education, political_id, zip, country = dem_residence,
+    age = consentage, race, race_recoded, gender, education,
+    political_id, zip, country = dem_residence,
     response_time, saw_dep_self_label = mhdem00
   )
 
@@ -201,6 +228,7 @@ pih_mutated <- pih_raw %>%
     date = as_date(ymd_hms(date)),
     year = year(date),
     decimal_year = decimal_date(date),
+    decimal_year_centered = decimal_year - 2021,
     dep_self_label_now = if_else(currentmhhx == "", NA, grepl("11", currentmhhx)), # Includes a negligible number of respondents who selected "depression" and "none of the above"
     dep_self_label_past = if_else(pastmhhx == "", NA, grepl("11", pastmhhx)),
     dep_self_label_ever = dep_self_label_now | dep_self_label_past,
@@ -216,12 +244,27 @@ pih_mutated <- pih_raw %>%
       !is.na(raceombmulti) & !is.na(ethnicityomb) ~ "Multiracial, Other or Unknown",
       T ~ NA_character_
     ),
+    race_recoded = race %>%
+      replace_values(
+        "American Indian or Alaska Native non-Hispanic" ~ "Multiracial, Other or Unknown",
+        "Native Hawaiian or Other Pacific Islander non-Hispanic" ~ "Multiracial, Other or Unknown"
+      ) %>%
+      factor(
+        levels = c(
+          "White non-Hispanic",
+          "Black non-Hispanic",
+          "Asian non-Hispanic",
+          "Hispanic",
+          "Multiracial, Other or Unknown"
+        )
+      ),
     gender = case_when(
-      gender == 1 & birth_sex %in% c(1, 3, NA) ~ "Cisgender Man",
-      gender == 2 & birth_sex %in% c(2, 3, NA) ~ "Cisgender Woman",
+      gender == 1 & birth_sex %in% c(1, 3, NA) ~ "(Cisgender) Man",
+      gender == 2 & birth_sex %in% c(2, 3, NA) ~ "(Cisgender) Woman",
       gender != birth_sex | gender == 3 ~ "TGD",
       T ~ NA
-    ),
+    ) %>%
+      fct(levels = c("(Cisgender) Man", "(Cisgender) Woman", "TGD")),
     education = recode_values(
       edu,
       1:4 ~ "High School or Less",
@@ -229,6 +272,13 @@ pih_mutated <- pih_raw %>%
       6:8 ~ "Undergraduate Degree",
       9:14 ~ "Graduate Degree",
       NA ~ NA
+    ) %>% fct(
+      levels = c(
+        "High School or Less",
+        "Some College",
+        "Undergraduate Degree",
+        "Graduate Degree"
+      )
     ),
     political_id = factor(
       politicalid,
@@ -244,7 +294,15 @@ pih_mutated <- pih_raw %>%
       ordered = T
     ),
     referral = broughtwebsite %>%
-      replace_values(c("", "null") ~ NA),
+      replace_values(c("", "null", ".") ~ NA),
+    referral_recoded = referral %>%
+      replace_values(
+        "Mention in a news story (any medium)" ~ "Other",
+        "Mention or link at a non-news Internet site" ~ "Other",
+        "My Internet search for this topic or a related topic" ~ "Other",
+        "Recommendation of a friend of co-worker" ~ "Other"
+      ) %>%
+      fct(levels = c("Assignment for school", "Assignment for work", "Other")),
     zip = if_else(grepl("^[0-9]{5}$", zipcode), zipcode, NA_character_),
     response_time = rowSums(across(ends_with("rt") & !c(
       "birthmonthrt", "birthyearrt", "genderrt", "countryresrt", "fieldofstudyrt",
@@ -257,10 +315,11 @@ pih_mutated <- pih_raw %>%
   mutate(depression_sum = sum(c_across(all_of("depression" %+% 1:7))) - 7) %>%
   ungroup() %>%
   select(
-    user_id, session_id, dataset, date, year, decimal_year,
+    user_id, session_id, dataset, date, year, decimal_year, decimal_year_centered,
     starts_with("dep_self_label"),
     all_of("depression" %+% 1:7), depression_sum,
-    age, race, gender, education, political_id, referral, zip, country = countryres,
+    age, race, race_recoded, gender, education,
+    political_id, referral, referral_recoded, zip, country = countryres,
     response_time
   )
 
@@ -305,38 +364,11 @@ saveRDS(pih_deduplicated, here("Data", "PIH - 2019-Current", "pih_clean.rds"))
 combined_data <- bind_rows(
   pimh_filtered,
   pih_deduplicated
-) %>%
-  # Recode certain demographic variables to examine change over time
-  mutate(
-    race_recoded = replace_values(
-      race,
-      "Asian non-Hispanic" ~ "Asian non-Hispanic",
-      "Black non-Hispanic" ~ "Black non-Hispanic",
-      "White non-Hispanic" ~ "White non-Hispanic",
-      "Hispanic" ~ "Hispanic",
-      c(
-        "American Indian or Alaska Native non-Hispanic",
-        "Native Hawaiian or Other Pacific Islander non-Hispanic",
-        "Multiracial, Other or Unknown"
-      ) ~ "Multiracial, Other or Unknown",
-      NA ~ NA
-    ),
-    gender_recoded = replace_values(
-      gender,
-      c("Cisgender Man", "Man") ~ "Man",
-      c("Cisgender Woman", "Woman") ~ "Woman",
-      c("TGD", NA) ~ NA
-    ),
-    referral_recoded = case_when(
-      referral == "Assignment for school" ~ "Assignment for school",
-      !is.na(referral) ~ "Other",
-      is.na(referral) ~ NA
-    )
-  )
+)
 
 
-## Symptom severity distributions compared to DASS-21 norms: see DASS vs Norms.R
-source(here("DASS vs Norms.R"))
+## Symptom severity distributions compared to DASS-21 norms
+source(here("Helper Functions", "DASS-21 Versus Norms.R"))
 dass21_dep_compare(combined_data, depression_sum)
 dass21_dep_compare(combined_data, depression_sum, group = dataset)
 dass21_dep_compare(combined_data, depression_sum, group = year)
@@ -416,8 +448,8 @@ change_by_year <- combined_data %>%
     pct_asian    = pct_in(race, "Asian non-Hispanic"),
 
     # Gender (pre-2019 and 2019+ labels pooled)
-    pct_man   = pct_in(gender, c("Man", "Cisgender Man")),
-    pct_woman = pct_in(gender, c("Woman", "Cisgender Woman")),
+    pct_man   = pct_in(gender, "(Cisgender) Man"),
+    pct_woman = pct_in(gender, "(Cisgender) Woman"),
     pct_tgd = pct_in(gender, "TGD"),
 
     # Means
@@ -450,7 +482,7 @@ change_by_year %>% select(dataset, year, n, pct_man, pct_woman, pct_tgd)
 
 aov(
   data = combined_data,
-  formula = date ~ gender_recoded
+  formula = date ~ gender
 ) %>% summary()
 
 # Race
@@ -480,13 +512,13 @@ aov(
 # All together
 aov(
   data = combined_data,
-  formula = as.numeric(date) ~ age + race_recoded + gender_recoded + education
+  formula = as.numeric(date) ~ age + race_recoded + gender + education
 ) %>% summary()
 
 # With directionality
 lm(
   data = combined_data,
-  formula = as.numeric(date) ~ age + race_recoded + gender_recoded + education
+  formula = as.numeric(date) ~ age + race_recoded + gender + education
 ) %>% summary()
 
 
