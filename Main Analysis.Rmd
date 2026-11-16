@@ -513,13 +513,13 @@ plot_curve(primary$Combined$curve)
 ```{r moderation, cache = T}
 # Each covariate's interaction with year is added to the primary model, in each dataset
 # Combined data: the covariate's effect may also differ by study period (covariate:dataset), so moderation is not confounded with the change between study periods
-# Reason for visiting was asked in PIH only
+# Reason for visiting was asked in PIH only; gender is tested in PIH only (no TGD participants in PIMH)
 # Fit moderation models, keeping results only; plot data for the combined data only
 moderation <- expand_grid(
   dataset = c("PIMH", "PIH", "Combined"),
   moderator = names(covariate_values)
 ) %>%
-  filter(moderator != "referral_recoded" | dataset == "PIH") %>%
+  filter(!moderator %in% c("referral_recoded", "gender") | dataset == "PIH") %>%
   mutate(
     data = list(PIMH = pimh_c, PIH = pih_c, Combined = all_c)[dataset],
     base = c(PIMH = pimh_model_base, PIH = pih_model_base, Combined = all_model_base)[dataset],
@@ -566,10 +566,10 @@ moderation %>%
 secondary_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE)"
 
 # Fit each model, keeping results only (numeric covariates: risk ratio = highest vs. lowest value)
-secondary <- imap(covariate_values, ~ fit_secondary(pih_c, secondary_base, .y, .x))
+secondary <- imap(covariate_values, ~ fit_secondary(pih_c, secondary_base, .y, .x, covariate_units[[.y]]))
 
-# Tests of each covariate, with Benjamini-Hochberg correction across covariates
-map(secondary, "test") %>%
+# Covariate odds ratios (per unit of numeric covariates), with Benjamini-Hochberg correction across all terms
+map(secondary, "coefficients") %>%
   bind_rows() %>%
   mutate(p.adjusted = p.adjust(p.value, method = "BH")) %>%
   show_table()

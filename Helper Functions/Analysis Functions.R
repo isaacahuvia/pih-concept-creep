@@ -204,6 +204,10 @@ risk_ratios <- function(
 }
 
 # Calculate mean BIC across imputed datasets
+# Plot data use the first five imputations only (run time); pooled with Rubin's rules as elsewhere, so plotted
+# points can differ slightly from the tables, which use all imputations
+plot_imputations <- function(fit_models, m = 5) as.mira(head(fit_models$analyses, m))
+
 mean_bic <- function(fit_models) map_dbl(fit_models$analyses, BIC) %>% mean()
 
 # Fit a model and keep only its results: pooled coefficients, point predictions (if years are given),
@@ -226,8 +230,8 @@ summarize_fit <- function(
     coefficients = pooled_coefficients(fit),
     predictions = if (!is.null(years)) point_predictions(fit, years, severity, moderator, moderator_values),
     ratios = risk_ratios(fit, severity = severity, moderator = moderator, moderator_values = moderator_values),
-    trend = if (plots) point_predictions(fit, seq(dates[1], dates[2], length.out = 8), c(5.5, 8.5, 12), moderator, moderator_values),
-    curve = if (plots) point_predictions(fit, dates, 0:21, moderator, moderator_values)
+    trend = if (plots) point_predictions(plot_imputations(fit), seq(dates[1], dates[2], length.out = 8), c(5.5, 8.5, 12), moderator, moderator_values),
+    curve = if (plots) point_predictions(plot_imputations(fit), dates, 0:21, moderator, moderator_values)
   )
 
 }
@@ -257,31 +261,24 @@ fit_moderation <- function(completed_data, base_formula, moderator, moderator_va
 
 }
 
-# Fit a model adding a covariate to a base model; keep a pooled Wald test (D1) of all of the covariate's terms,
+# Fit a model adding a covariate to a base model; keep the covariate's odds ratios (per unit for numeric covariates),
 # the risk ratio between covariate levels (factors: each level vs. reference; numeric: highest vs. lowest value),
 # and data for plot_curve_by()
-fit_secondary <- function(completed_data, base_formula, covariate, values = NULL, severity = 8.5) {
+fit_secondary <- function(completed_data, base_formula, covariate, values = NULL, unit = 1, severity = 8.5) {
 
-  base_formula <- as.formula(base_formula)
-  full_formula <- update(base_formula, as.formula(". ~ . + " %+% covariate))
-
-  full_model <- fit_models(completed_data, full_formula)
-  test <- D1(full_model, fit_models(completed_data, base_formula))$result
+  full_model <- fit_models(completed_data, base_formula %+% " + " %+% covariate)
 
   list(
-    test = tibble(
-      covariate = covariate,
-      f = test[, "F.value"],
-      df1 = test[, "df1"],
-      df2 = test[, "df2"],
-      p.value = test[, "P(>F)"]
-    ),
+    coefficients = pooled_coefficients(full_model) %>%
+      filter(str_starts(term, fixed(covariate))) %>%
+      odds_ratios(unit) %>%
+      mutate(covariate = covariate, unit = unit, .before = 1),
     ratios = risk_ratios(
       full_model,
       variables_to_calculate = set_names(list(if (is.null(values)) "reference" else range(values)), covariate),
       severity = severity
     ),
-    curve = point_predictions(full_model, years = NULL, severity = 0:21, moderator = covariate, moderator_values = values)
+    curve = point_predictions(plot_imputations(full_model), years = NULL, severity = 0:21, moderator = covariate, moderator_values = values)
   )
 
 }

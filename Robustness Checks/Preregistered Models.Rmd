@@ -40,6 +40,8 @@ models <- c(
 
 # Fit each model, keeping results only (summarize_fit() in Analysis Functions.R)
 # Combined interaction model: the severity slope may also differ by study period, so the interaction is not confounded with the change between study periods
+# depression_sum:dataset is in the combined interaction model only, so the two combined linear models differ by two terms:
+# the interaction coefficient and its p-value are the test; BIC, predictions, and risk ratios differ by both terms
 results <- specifications %>%
   expand_grid(model = names(models)) %>%
   mutate(
