@@ -48,7 +48,8 @@ fit_models <- function(completed_data, model_formula) {
 
   fit_models <- map(
     .x = completed_data,
-    .f = ~ glm(data = .x, formula = model_formula, family = binomial)
+    # do.call() stores the data itself in each model's call, so marginaleffects always recovers the right data
+    .f = ~ do.call("glm", list(formula = model_formula, data = .x, family = binomial))
   ) %>%
     as.mira()
 

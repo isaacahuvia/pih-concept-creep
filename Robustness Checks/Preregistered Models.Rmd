@@ -1,0 +1,79 @@
+---
+title: "Robustness Check: Preregistered Models"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+The primary analyses use a cubic term for `depression_sum`, chosen in `Main Analysis.Rmd` section 1.5. This check refits the primary models as preregistered, with a linear term, and compares predictions and risk ratios.
+
+```{r setup, message = F, warning = F}
+library(here)
+library(knitr)
+library(kableExtra)
+library(mice)
+library(marginaleffects)
+library(tidyverse)
+`%+%` <- paste0
+
+source(here("Helper Functions", "Analysis Functions.R"))
+
+pimh_c <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_completed.rds"))
+pih_c <- readRDS(here("Data", "PIH - 2019-Current", "pih_completed.rds"))
+all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
+```
+
+```{r fit}
+covariates <- " + decimal_year_centered + age + race_recoded + gender + education"
+
+specifications <- tribble(
+  ~dataset,   ~data,  ~years,       ~extra,
+  "PIMH",     pimh_c, c(2016, 2019), "",
+  "PIH",      pih_c,  c(2019, 2026), "",
+  "Combined", all_c,  c(2016, 2026), " + dataset"
+)
+
+# Fit preregistered (linear) and primary (cubic) models; keep only predictions and risk ratios
+results <- specifications %>%
+  expand_grid(model = c("Preregistered (linear)", "Primary (cubic)")) %>%
+  mutate(
+    formula = if_else(model == "Primary (cubic)", "poly(depression_sum, 3)", "depression_sum"),
+    formula = "dep_self_label_now ~ " %+% formula %+% covariates %+% extra,
+    fit = map2(data, formula, ~ fit_models(.x, as.formula(.y))),
+    predictions = map2(fit, years, ~ as_tibble(point_predictions(.x, .y))),
+    ratios = map(fit, ~ as_tibble(risk_ratios(.x)))
+  )
+```
+
+## Coefficients, Preregistered Models (Log-Odds)
+
+```{r coefficients}
+preregistered <- results %>%
+  filter(model == "Preregistered (linear)") %>%
+  pull(fit, name = dataset)
+
+summarize_models(preregistered$PIMH, exp = F)
+summarize_models(preregistered$PIH, exp = F)
+summarize_models(preregistered$Combined, exp = F)
+```
+
+## Risk Ratios per Year
+
+```{r ratios}
+results %>%
+  select(dataset, model, ratios) %>%
+  unnest(ratios) %>%
+  select(dataset, model, depression_sum, estimate, conf.low, conf.high) %>%
+  kable(digits = 3) %>%
+  kable_styling()
+```
+
+## Point Predictions
+
+```{r predictions}
+results %>%
+  select(dataset, model, predictions) %>%
+  unnest(predictions) %>%
+  transmute(dataset, model, depression_sum, year = decimal_year_centered + 2021, estimate, conf.low, conf.high) %>%
+  kable(digits = 3) %>%
+  kable_styling()
+```
