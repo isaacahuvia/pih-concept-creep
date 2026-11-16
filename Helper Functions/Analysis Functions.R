@@ -204,11 +204,11 @@ risk_ratios <- function(
 }
 
 # Calculate mean BIC across imputed datasets
+mean_bic <- function(fit_models) map_dbl(fit_models$analyses, BIC) %>% mean()
+
 # Plot data use the first five imputations only (run time); pooled with Rubin's rules as elsewhere, so plotted
 # points can differ slightly from the tables, which use all imputations
 plot_imputations <- function(fit_models, m = 5) as.mira(head(fit_models$analyses, m))
-
-mean_bic <- function(fit_models) map_dbl(fit_models$analyses, BIC) %>% mean()
 
 # Fit a model and keep only its results: pooled coefficients, point predictions (if years are given),
 # risk ratios per year, and (if plots = T) data for plot_trend() and plot_curve()
