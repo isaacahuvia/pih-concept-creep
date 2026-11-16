@@ -36,25 +36,18 @@ specifications <- tribble(
   "PIH",      pih_c,    list(drop_na(pih_ni, all_of(model_variables))),    c(2019, 2026), "",
   "Combined", all_c,    list(drop_na(all_ni, all_of(model_variables))),    c(2016, 2026), " + dataset"
 ) %>%
-  mutate(formula = "dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education" %+% extra)
+  mutate(formula = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education" %+% extra)
 
-# Fit one model and keep only its predictions and risk ratios (fitted models are not kept, to save memory)
-summarize_fit <- function(data, formula, years) {
-  fit <- fit_models(data, as.formula(formula))
-  tibble(
-    predictions = list(as_tibble(point_predictions(fit, years))),
-    ratios = list(as_tibble(risk_ratios(fit)))
-  )
-}
-
+# Fit each model, keeping results only (summarize_fit() in Analysis Functions.R)
 results <- specifications %>%
   pivot_longer(c(imputed, complete_cases), names_to = "data_type", values_to = "data") %>%
   mutate(
     n = map_int(data, ~ nrow(.x[[1]])),
-    summaries = pmap(list(data, formula, years), summarize_fit)
+    summaries = pmap(list(data, formula, years), ~ summarize_fit(..1, ..2, years = ..3)),
+    predictions = map(summaries, "predictions"),
+    ratios = map(summaries, "ratios")
   ) %>%
-  select(-data) %>%
-  unnest(summaries)
+  select(-data, -summaries)
 ```
 
 ## Sample Sizes
@@ -85,7 +78,7 @@ results %>%
 results %>%
   select(dataset, data_type, predictions) %>%
   unnest(predictions) %>%
-  transmute(dataset, data_type, depression_sum, year = decimal_year_centered + 2021, estimate, conf.low, conf.high) %>%
+  select(dataset, data_type, depression_sum, year = decimal_year, estimate, conf.low, conf.high) %>%
   kable(digits = 3) %>%
   kable_styling()
 ```

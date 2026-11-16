@@ -58,7 +58,7 @@ pih_ni %>%
 ## 1. Primary Analysis, Controlling for Reason for Visiting (PIH)
 
 ```{r primary-referral}
-pih_model_base <- "dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education"
+pih_model_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education"
 
 primary_referral <- tribble(
   ~model,                                    ~data,          ~formula,
@@ -82,7 +82,7 @@ primary_referral %>%
 Risk ratio for age 60 vs. 20 at DASS = 8.5, as in `Main Analysis.Rmd` section 3.1.
 
 ```{r age-adjusted}
-secondary_base <- "dep_self_label_now ~ poly(depression_sum, 3) + age"
+secondary_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + age"
 demographics <- " + race_recoded + gender + education"
 
 age_ratio <- function(data, formula) {
@@ -140,12 +140,12 @@ bin_ratio <- function(data, formula, variable) {
 
 age_binned <- tribble(
   ~model,                                ~data,                                                    ~formula,                                                                                  ~variable,
-  "18-22 vs. 25+",                       map(pih_c_binned, ~ filter(.x, !is.na(age_binary))),      "dep_self_label_now ~ poly(depression_sum, 3) + age_binary",                               "age_binary",
-  "18-22 vs. 25+, + referral",           map(pih_c_binned, ~ filter(.x, !is.na(age_binary))),      "dep_self_label_now ~ poly(depression_sum, 3) + age_binary + referral_recoded",            "age_binary",
-  "18-22 vs. 25+, school only",          school(map(pih_c_binned, ~ filter(.x, !is.na(age_binary)))), "dep_self_label_now ~ poly(depression_sum, 3) + age_binary",                            "age_binary",
-  "18-22 vs. 25+, not school",           not_school(map(pih_c_binned, ~ filter(.x, !is.na(age_binary)))), "dep_self_label_now ~ poly(depression_sum, 3) + age_binary",                        "age_binary",
-  "Five age groups",                     pih_c_binned,                                             "dep_self_label_now ~ poly(depression_sum, 3) + age_group",                                "age_group",
-  "Five age groups, + referral",         pih_c_binned,                                             "dep_self_label_now ~ poly(depression_sum, 3) + age_group + referral_recoded",             "age_group"
+  "18-22 vs. 25+",                       map(pih_c_binned, ~ filter(.x, !is.na(age_binary))),      "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + age_binary",                               "age_binary",
+  "18-22 vs. 25+, + referral",           map(pih_c_binned, ~ filter(.x, !is.na(age_binary))),      "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + age_binary + referral_recoded",            "age_binary",
+  "18-22 vs. 25+, school only",          school(map(pih_c_binned, ~ filter(.x, !is.na(age_binary)))), "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + age_binary",                            "age_binary",
+  "18-22 vs. 25+, not school",           not_school(map(pih_c_binned, ~ filter(.x, !is.na(age_binary)))), "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + age_binary",                        "age_binary",
+  "Five age groups",                     pih_c_binned,                                             "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + age_group",                                "age_group",
+  "Five age groups, + referral",         pih_c_binned,                                             "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + age_group + referral_recoded",             "age_group"
 ) %>%
   mutate(ratios = pmap(list(data, formula, variable), bin_ratio))
 
@@ -162,7 +162,7 @@ age_binned %>%
 Pooled estimates of the `age:decimal_year_centered` term (log-odds per year of age per year of time). These per-term tests use the pooled coefficient and are not affected by the `D1()` denominator df problem at small m.
 
 ```{r age-by-year}
-base <- "dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education"
+base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education"
 
 age_by_year <- tribble(
   ~model,                                   ~data,  ~formula,

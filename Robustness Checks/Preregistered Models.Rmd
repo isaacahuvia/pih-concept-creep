@@ -4,7 +4,7 @@ output: html_document
 date: "`r Sys.Date()`"
 ---
 
-The primary analyses use a cubic term for `depression_sum`, chosen in `Main Analysis.Rmd` section 1.5. This check refits the primary models as preregistered: with a linear term, and with the preregistered symptom x date interaction (prereg section 7). It compares predictions and risk ratios with the primary models.
+The primary analyses use a cubic term for `depression_sum`, chosen in `Main Analysis.Rmd` section 1.5. This check refits the primary models as preregistered: with a linear term, and with the preregistered symptom x date interaction (prereg section 7). In the combined data, the interaction model also lets the symptom slope differ by study period. It compares predictions and risk ratios with the primary models.
 
 ```{r setup, message = F, warning = F}
 library(here)
@@ -35,27 +35,22 @@ specifications <- tribble(
 models <- c(
   "Preregistered (linear)" = "depression_sum + decimal_year_centered",
   "Preregistered (linear, with interaction)" = "depression_sum * decimal_year_centered",
-  "Primary (cubic)" = "poly(depression_sum, 3) + decimal_year_centered"
+  "Primary (cubic)" = "poly(depression_sum, 3, raw = TRUE) + decimal_year_centered"
 )
 
-# Fit one model and keep only its pooled coefficients, predictions, and risk ratios (fitted models are not kept, to save memory)
-summarize_fit <- function(data, formula, years) {
-  fit <- fit_models(data, as.formula(formula))
-  tibble(
-    coefficients = list(summary(pool(fit), conf.int = T) %>% select(term, estimate, std.error, p.value, conf.low = `2.5 %`, conf.high = `97.5 %`)),
-    predictions = list(as_tibble(point_predictions(fit, years))),
-    ratios = list(as_tibble(risk_ratios(fit)))
-  )
-}
-
+# Fit each model, keeping results only (summarize_fit() in Analysis Functions.R)
+# Combined interaction model: the severity slope may also differ by study period, so the interaction is not confounded with the change between study periods
 results <- specifications %>%
   expand_grid(model = names(models)) %>%
   mutate(
-    formula = "dep_self_label_now ~ " %+% models[model] %+% covariates %+% extra,
-    summaries = pmap(list(data, formula, years), summarize_fit)
+    interaction_extra = if_else(dataset == "Combined" & model == "Preregistered (linear, with interaction)", " + depression_sum:dataset", ""),
+    formula = "dep_self_label_now ~ " %+% models[model] %+% covariates %+% extra %+% interaction_extra,
+    summaries = pmap(list(data, formula, years), ~ summarize_fit(..1, ..2, years = ..3)),
+    coefficients = map(summaries, "coefficients"),
+    predictions = map(summaries, "predictions"),
+    ratios = map(summaries, "ratios")
   ) %>%
-  select(-data) %>%
-  unnest(summaries)
+  select(-data, -summaries)
 ```
 
 ## Preregistered Symptom x Date Interaction (Log-Odds)
@@ -70,15 +65,15 @@ results %>%
   kable_styling()
 ```
 
-## Coefficients, Preregistered Models Without Interaction (Log-Odds)
+## Odds Ratios, Preregistered Models Without Interaction
 
 ```{r coefficients}
 results %>%
   filter(model == "Preregistered (linear)") %>%
   select(dataset, coefficients) %>%
   unnest(coefficients) %>%
-  kable(digits = 3) %>%
-  kable_styling()
+  odds_ratios() %>%
+  show_table()
 ```
 
 ## Risk Ratios per Year
@@ -98,7 +93,7 @@ results %>%
 results %>%
   select(dataset, model, predictions) %>%
   unnest(predictions) %>%
-  transmute(dataset, model, depression_sum, year = decimal_year_centered + 2021, estimate, conf.low, conf.high) %>%
+  select(dataset, model, depression_sum, year = decimal_year, estimate, conf.low, conf.high) %>%
   kable(digits = 3) %>%
   kable_styling()
 ```

@@ -53,6 +53,55 @@ severity_labels <- c(
   "12"  = "High (DASS = 12)"
 )
 
+# Covariates used as moderators (3.1) and secondary predictors (3.2)
+# Values: where numeric covariates are evaluated (factors: NULL, i.e., every level)
+covariate_values <- list(
+  age = c(20, 40, 60),
+  race_recoded = NULL,
+  gender = NULL,
+  education = NULL,
+  political_id_numeric = c(1, 4, 7), # 1-7 scale
+  median_family_income = c(5, 10, 20), # In $10,000s
+  dem_vote_share = c(.3, .5, .7),
+  urban_rural = c(1, 4, 7, 10),
+  provider_rate = c(100, 300, 500),
+  referral_recoded = NULL
+)
+
+# Units for odds ratios of numeric covariates (e.g., age per 10 years); factors: 1
+covariate_units <- c(
+  age = 10,
+  race_recoded = 1,
+  gender = 1,
+  education = 1,
+  political_id_numeric = 1,
+  median_family_income = 1, # $10,000
+  dem_vote_share = .1, # 10 percentage points
+  urban_rural = 1,
+  provider_rate = 100, # 100 per 100,000
+  referral_recoded = 1
+)
+
+covariate_labels <- c(
+  age = "Age",
+  race_recoded = "Race/Ethnicity",
+  gender = "Gender",
+  education = "Education",
+  political_id_numeric = "Political Ideology",
+  median_family_income = "Median Family Income (ZIP Code)",
+  dem_vote_share = "Democratic Vote Share (ZIP Code)",
+  urban_rural = "Urban/Rural Area (RUCA Code)",
+  provider_rate = "Mental Health Providers per 100,000 (County)",
+  referral_recoded = "Reason for Visiting Website"
+)
+
+covariate_value_labels <- list(
+  political_id_numeric = c("Strongly Liberal", "In the Middle", "Strongly Conservative"),
+  median_family_income = c("$50,000", "$100,000", "$200,000"),
+  dem_vote_share = c("30%", "50%", "70%"),
+  urban_rural = c("Metropolitan Core (1)", "Micropolitan Core (4)", "Small Town Core (7)", "Rural (10)")
+)
+
 
 ## Load data
 # Non-imputed datasets ("_ni")
@@ -328,8 +377,8 @@ compare_models(
   pimh_c,
   list(
     "Linear" = dep_self_label_now ~ depression_sum + decimal_year_centered + age + race_recoded + gender + education,
-    "Quadratic" = dep_self_label_now ~ poly(depression_sum, 2) + decimal_year_centered + age + race_recoded + gender + education,
-    "Cubic" = dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education,
+    "Quadratic" = dep_self_label_now ~ poly(depression_sum, 2, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education,
+    "Cubic" = dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education,
     "Log" = dep_self_label_now ~ log(depression_sum + 1) + decimal_year_centered + age + race_recoded + gender + education,
     "Exponentiated" = dep_self_label_now ~ exp(depression_sum) + decimal_year_centered + age + race_recoded + gender + education
   )
@@ -340,8 +389,8 @@ compare_models(
   pih_c,
   list(
     "Linear" = dep_self_label_now ~ depression_sum + decimal_year_centered + age + race_recoded + gender + education,
-    "Quadratic" = dep_self_label_now ~ poly(depression_sum, 2) + decimal_year_centered + age + race_recoded + gender + education,
-    "Cubic" = dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education,
+    "Quadratic" = dep_self_label_now ~ poly(depression_sum, 2, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education,
+    "Cubic" = dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education,
     "Log" = dep_self_label_now ~ log(depression_sum + 1) + decimal_year_centered + age + race_recoded + gender + education,
     "Exponentiated" = dep_self_label_now ~ exp(depression_sum) + decimal_year_centered + age + race_recoded + gender + education
   )
@@ -352,8 +401,8 @@ compare_models(
   all_c,
   list(
     "Linear" = dep_self_label_now ~ depression_sum + decimal_year_centered + age + race_recoded + gender + education + dataset,
-    "Quadratic" = dep_self_label_now ~ poly(depression_sum, 2) + decimal_year_centered + age + race_recoded + gender + education + dataset,
-    "Cubic" = dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education + dataset,
+    "Quadratic" = dep_self_label_now ~ poly(depression_sum, 2, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education + dataset,
+    "Cubic" = dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education + dataset,
     "Log" = dep_self_label_now ~ log(depression_sum + 1) + decimal_year_centered + age + race_recoded + gender + education + dataset,
     "Exponentiated" = dep_self_label_now ~ exp(depression_sum) + decimal_year_centered + age + race_recoded + gender + education + dataset
   )
@@ -367,43 +416,53 @@ These analyses support a cubic term in all three datasets (PIMH, PIH, combined).
 As shown above, descriptively, the relationship between year and self-labeling appears stronger at lower levels of symptom severity. This would be modeled with an interaction term; we test this here.
 
 ```{r tff-interaction, cache = T}
+covariates <- " + age + race_recoded + gender + education"
+
 # In PIMH
-compare_models(
+tff_interaction_pimh <- compare_models(
   pimh_c,
   list(
-    "Best-Fit" = dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education,
-    "Interaction" = dep_self_label_now ~ poly(depression_sum, 3) * decimal_year_centered + age + race_recoded + gender + education
+    "Best-Fit" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered" %+% covariates,
+    "Interaction" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) * decimal_year_centered" %+% covariates
   )
 )
 
 # In PIH
-compare_models(
+tff_interaction_pih <- compare_models(
   pih_c,
   list(
-    "Best-Fit" = dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education,
-    "Interaction" = dep_self_label_now ~ poly(depression_sum, 3) * decimal_year_centered + age + race_recoded + gender + education
+    "Best-Fit" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered" %+% covariates,
+    "Interaction" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) * decimal_year_centered" %+% covariates
   )
 )
 
-# In combined data
-compare_models(
+# In combined data, allowing the severity curve to differ by study period, so the interaction is not confounded with the change between study periods
+tff_interaction_all <- compare_models(
   all_c,
   list(
-    "Best-Fit" = dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education + dataset,
-    "Interaction" = dep_self_label_now ~ poly(depression_sum, 3) * decimal_year_centered + age + race_recoded + gender + education + dataset
+    "Best-Fit" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered" %+% covariates %+% " + dataset + poly(depression_sum, 3, raw = TRUE):dataset",
+    "Interaction" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) * decimal_year_centered" %+% covariates %+% " + dataset + poly(depression_sum, 3, raw = TRUE):dataset"
   )
 )
+
+# Severity x year terms (log-odds) and p-values
+list(PIMH = tff_interaction_pimh, PIH = tff_interaction_pih, Combined = tff_interaction_all) %>%
+  map("coefficients") %>%
+  bind_rows(.id = "dataset") %>%
+  filter(model == "Interaction", str_detect(term, ":decimal_year_centered")) %>%
+  select(-model) %>%
+  show_table(digits = 6)
 ```
 
 The interaction term improves model fit in the combined data, but not in either dataset individually. If effects of `depression_sum` on `dep_self_label_now` are larger in earlier years in the combined data, this is likely an artifact of the two datasets; this trend does not appear in either dataset individually.
 
-These analyses pretty conclusively support a best-fit model of `dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education`. This section does not examine the functional form of covariates to the outcome; for the sake of parsimony in primary analyses, this is assumed to be linear. These relationships are investigated further in secondary analyses.
+These analyses pretty conclusively support a best-fit model of `dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education`. This section does not examine the functional form of covariates to the outcome; for the sake of parsimony in primary analyses, this is assumed to be linear. These relationships are investigated further in secondary analyses.
 
 # 2. Primary Analysis
 
 The preregistered primary analysis model is `dep_self_label_now ~ depression_sum + decimal_year_centered + age + race_recoded + gender + education`.
 
-Per the above analyses, the functional form is better represented by the function `dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education`.
+Per the above analyses, the functional form is better represented by the function `dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education`.
 
 For the primary analysis, we use the best-fit functions above. We report findings from simpler, preregistered models in `Robustness Checks/Preregistered Models.Rmd`.
 
@@ -411,27 +470,31 @@ For the primary analysis, we use the best-fit functions above. We report finding
 
 ```{r primary-regressions, cache = T}
 # Save baseline model formulas
-pimh_model_base <- "dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education"
-pih_model_base <- "dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education"
-all_model_base <- "dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education + dataset"
+pimh_model_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education"
+pih_model_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education"
+all_model_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education + dataset"
 
-# Fit, analyze primary PIMH model
-pimh_model_primary <- fit_models(pimh_c, as.formula(pimh_model_base))
-summarize_models(pimh_model_primary)
-point_predictions(pimh_model_primary, 2016:2019, print = T)
-risk_ratios(pimh_model_primary, print = T)
+# Fit primary models, keeping results only
+primary <- list(
+  PIMH = summarize_fit(pimh_c, pimh_model_base, years = 2016:2019),
+  PIH = summarize_fit(pih_c, pih_model_base, years = 2019:2026),
+  Combined = summarize_fit(all_c, all_model_base, years = c(2016, 2026), plots = T) # Combined, best-fit (i.e., incorporates above considerations)
+)
+
+# PIMH
+show_table(odds_ratios(primary$PIMH$coefficients))
+show_table(primary$PIMH$predictions)
+show_table(primary$PIMH$ratios)
 
 # PIH
-pih_model_primary <- fit_models(pih_c, as.formula(pih_model_base))
-summarize_models(pih_model_primary)
-point_predictions(pih_model_primary, 2019:2026, print = T)
-risk_ratios(pih_model_primary, print = T)
+show_table(odds_ratios(primary$PIH$coefficients))
+show_table(primary$PIH$predictions)
+show_table(primary$PIH$ratios)
 
-# Combined, best-fit (i.e., incorporates above considerations)
-all_model_primary <- fit_models(all_c, as.formula(all_model_base))
-summarize_models(all_model_primary)
-point_predictions(all_model_primary, c(2016, 2026), print = T)
-risk_ratios(all_model_primary, print = T)
+# Combined
+show_table(odds_ratios(primary$Combined$coefficients))
+show_table(primary$Combined$predictions)
+show_table(primary$Combined$ratios)
 ```
 
 ## 2.2. Primary Regression Results, Visualized
@@ -439,236 +502,91 @@ risk_ratios(all_model_primary, print = T)
 For the sake of parsimony, and because results do not differ meaningfully between datasets, results will be visualized using the combined model.
 
 ```{r primary-regressions-visualized}
-plot_trend(all_model_primary)
-plot_curve(all_model_primary)
+plot_trend(primary$Combined$trend)
+plot_curve(primary$Combined$curve)
 ```
 
 # 3. Secondary Analyses
 
 ## 3.1. Moderation of Primary Analyses
 
-### 3.1.1. Moderation by Age
+```{r moderation, cache = T}
+# Each covariate's interaction with year is added to the primary model, in each dataset
+# Combined data: the covariate's effect may also differ by study period (covariate:dataset), so moderation is not confounded with the change between study periods
+# Reason for visiting was asked in PIH only
+# Fit moderation models, keeping results only; plot data for the combined data only
+moderation <- expand_grid(
+  dataset = c("PIMH", "PIH", "Combined"),
+  moderator = names(covariate_values)
+) %>%
+  filter(moderator != "referral_recoded" | dataset == "PIH") %>%
+  mutate(
+    data = list(PIMH = pimh_c, PIH = pih_c, Combined = all_c)[dataset],
+    base = c(PIMH = pimh_model_base, PIH = pih_model_base, Combined = all_model_base)[dataset],
+    base = if_else(dataset == "Combined", base %+% " + dataset:" %+% moderator, base),
+    results = pmap(
+      list(data, base, moderator, dataset),
+      ~ fit_moderation(..1, ..2, ..3, covariate_values[[..3]], covariate_units[[..3]], plots = ..4 == "Combined")
+    )
+  ) %>%
+  select(-data)
 
-```{r, moderation-age, cache = T}
-# Set values
-age_values <- c(20, 40, 60)
+# Moderator x year odds ratios (per unit of numeric moderators), with Benjamini-Hochberg correction within each dataset
+moderation %>%
+  mutate(coefficients = map(results, "coefficients")) %>%
+  select(dataset, coefficients) %>%
+  unnest(coefficients) %>%
+  mutate(p.adjusted = p.adjust(p.value, method = "BH"), .by = dataset) %>%
+  show_table()
 
-# Fit moderation models
-moderation_age <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "age"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "age"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:age", "age")
-)
+# Risk ratios per year by moderator value, at DASS = 8.5
+moderation %>%
+  mutate(ratios = map(results, "ratios")) %>%
+  select(dataset, moderator, ratios) %>%
+  unnest(ratios) %>%
+  select(dataset, moderator, value, estimate, conf.low, conf.high, p.value) %>%
+  show_table()
 
-map(moderation_age, "test") %>% bind_rows(.id = "dataset")
+# Visualized, combined data
+moderation %>%
+  filter(dataset == "Combined") %>%
+  pwalk(function(moderator, results, ...) {
+    title <- covariate_labels[[moderator]]
+    trend <- label_groups(results$trend, moderator, covariate_values[[moderator]], covariate_value_labels[[moderator]])
+    curve <- label_groups(results$curve, moderator, covariate_values[[moderator]], covariate_value_labels[[moderator]])
+    print(plot_trend(trend, title = title))
+    print(plot_curve(curve, title = title))
+  })
 ```
-
-There is no evidence of moderation by age, i.e., concept creep is observed in similar amounts across ages.
-
-### 3.1.2. Moderation by Race/Ethnicity
-
-```{r, moderation-race, cache = T}
-# Fit moderation models
-moderation_race <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "race_recoded"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "race_recoded"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:race_recoded", "race_recoded")
-)
-
-map(moderation_race, "test") %>% bind_rows(.id = "dataset")
-```
-
-There is no evidence of moderation by race, i.e., concept creep is observed in similar amounts across racial groups.
-
-### 3.1.3. Moderation by Gender
-
-```{r, moderation-gender, cache = T}
-# Fit moderation models
-moderation_gender <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "gender"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "gender"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:gender", "gender")
-)
-
-map(moderation_gender, "test") %>% bind_rows(.id = "dataset")
-```
-
-There is no evidence of moderation by gender, i.e., concept creep is observed in similar amounts across gender groups.
-
-### 3.1.4. Moderation by Education
-
-```{r, moderation-education, cache = T}
-# Fit moderation models
-moderation_education <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "education"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "education"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:education", "education")
-)
-
-map(moderation_education, "test") %>% bind_rows(.id = "dataset")
-```
-
-There is no evidence of moderation by education, i.e., concept creep is observed in similar amounts across education groups.
-
-### 3.1.5. Moderation by Political Ideology
-
-```{r, moderation-political-id, cache = T}
-# Fit moderation models
-moderation_political_id <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "political_id_numeric"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "political_id_numeric"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:political_id_numeric", "political_id_numeric")
-)
-
-map(moderation_political_id, "test") %>% bind_rows(.id = "dataset")
-```
-
-There is no evidence of moderation by political ideology, i.e., concept creep is observed in similar amounts across political groups.
-
-### 3.1.6. Moderation by Urban/Rural Area
-
-```{r, moderation-urban-rural, cache = T}
-# Fit moderation models
-moderation_urban_rural <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "urban_rural"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "urban_rural"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:urban_rural", "urban_rural")
-)
-
-map(moderation_urban_rural, "test") %>% bind_rows(.id = "dataset")
-```
-
-There is no evidence of moderation by urban/rural area, i.e., concept creep is observed in similar amounts across urban and rural areas.
-
-### 3.1.7. Moderation by Liberal/Conservative Area
-
-```{r, moderation-liberal-conservative, cache = T}
-# Fit moderation models
-moderation_dem_vote_share <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "dem_vote_share"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "dem_vote_share"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:dem_vote_share", "dem_vote_share")
-)
-
-map(moderation_dem_vote_share, "test") %>% bind_rows(.id = "dataset")
-```
-
-There is no evidence of moderation by liberal/conservative area, i.e., concept creep is observed in similar amounts across liberal and conservative areas.
-
-### 3.1.8. Moderation by High/Low Income Area
-
-```{r, moderation-area-income, cache = T}
-# Fit moderation models
-moderation_median_family_income <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "median_family_income"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "median_family_income"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:median_family_income", "median_family_income")
-)
-
-map(moderation_median_family_income, "test") %>% bind_rows(.id = "dataset")
-```
-
-There is no evidence of moderation by high/low income area, i.e., concept creep is observed in similar amounts across high- and low-income areas.
-
-### 3.1.9. Moderation by High/Low Treatment Access Area
-
-```{r, moderation-treatment-access, cache = T}
-# Fit moderation models
-moderation_provider_rate <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "provider_rate"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "provider_rate"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:provider_rate", "provider_rate")
-)
-
-map(moderation_provider_rate, "test") %>% bind_rows(.id = "dataset")
-```
-
-There is no evidence of moderation by high/low treatment access area, i.e., concept creep is observed in similar amounts across high- and low-treatment access areas.
-
-### 3.1.10. Moderation by Reason for Visiting Website
-
-```{r, moderation-referral, cache = T}
-# Fit moderation model
-moderation_referral_recoded <- fit_moderation(pih_c, pih_model_base, "referral_recoded")
-
-moderation_referral_recoded$test
-```
-
-There is no evidence of moderation by reason for visiting website, i.e., concept creep is observed in similar amounts across participants visiting the website for school, work, or other reasons.
-
 
 ## 3.2. Concept Breadth by Participant Characteristics
 
 ```{r cb-by-char, cache = T}
 # Baseline model for these tests
-secondary_base <- "dep_self_label_now ~ poly(depression_sum, 3)"
+secondary_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE)"
 
-# Covariates; numeric covariates need values (curves drawn at each; risk ratio = highest vs. lowest)
-secondary_covariates <- list(
-  age = c(20, 40, 60),
-  race_recoded = NULL,
-  gender = NULL,
-  education = NULL,
-  political_id_numeric = c(1, 4, 7), # 1-7 scale
-  median_family_income = c(5, 10, 20), # In $10,000s
-  dem_vote_share = c(.3, .5, .7),
-  urban_rural = c(1, 4, 7, 10),
-  provider_rate = c(100, 300, 500),
-  referral_recoded = NULL
-)
-
-# Labels for plots
-secondary_labels <- c(
-  age = "Age",
-  race_recoded = "Race/Ethnicity",
-  gender = "Gender",
-  education = "Education",
-  political_id_numeric = "Political Ideology",
-  median_family_income = "Median Family Income (ZIP Code)",
-  dem_vote_share = "Democratic Vote Share (ZIP Code)",
-  urban_rural = "Urban/Rural Area (RUCA Code)",
-  provider_rate = "Mental Health Providers per 100,000 (County)",
-  referral_recoded = "Reason for Visiting Website"
-)
-
-secondary_value_labels <- list(
-  political_id_numeric = c("Strongly Liberal", "In the Middle", "Strongly Conservative"),
-  median_family_income = c("$50,000", "$100,000", "$200,000"),
-  dem_vote_share = c("30%", "50%", "70%"),
-  urban_rural = c("Metropolitan Core (1)", "Micropolitan Core (4)", "Small Town Core (7)", "Rural (10)")
-)
-
-# Fit each model
-secondary <- imap(secondary_covariates, ~ fit_secondary(pih_c, secondary_base, .y))
+# Fit each model, keeping results only (numeric covariates: risk ratio = highest vs. lowest value)
+secondary <- imap(covariate_values, ~ fit_secondary(pih_c, secondary_base, .y, .x))
 
 # Tests of each covariate, with Benjamini-Hochberg correction across covariates
 map(secondary, "test") %>%
   bind_rows() %>%
   mutate(p.adjusted = p.adjust(p.value, method = "BH")) %>%
-  kable(digits = 3) %>%
-  kable_styling()
+  show_table()
 
 # Risk ratios between levels of each covariate, at DASS = 8.5
-imap(
-  secondary_covariates,
-  ~ risk_ratios(
-    secondary[[.y]]$model,
-    severity = 8.5,
-    variables_to_calculate = set_names(list(if(is.null(.x)) "reference" else range(.x)), .y)
-  ) %>%
-    as_tibble()
-) %>%
+map(secondary, "ratios") %>%
   bind_rows() %>%
   select(term, contrast, depression_sum, estimate, conf.low, conf.high, p.value) %>%
-  kable(digits = 3) %>%
-  kable_styling()
+  show_table()
 
 # Visualized
-imap(
-  secondary_covariates,
-  ~ plot_curve_by(secondary[[.y]]$model, .y, .x, label = secondary_labels[[.y]], value_labels = secondary_value_labels[[.y]])
-) %>%
-  walk(print)
+iwalk(
+  secondary,
+  ~ label_groups(.x$curve, .y, covariate_values[[.y]], covariate_value_labels[[.y]]) %>%
+    plot_curve_by(label = covariate_labels[[.y]]) %>%
+    print()
+)
 ```
 
 # 4. Robustness Checks
