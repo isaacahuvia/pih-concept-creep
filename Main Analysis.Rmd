@@ -513,13 +513,13 @@ plot_curve(primary$Combined$curve)
 ```{r moderation, cache = T}
 # Each covariate's interaction with year is added to the primary model, in each dataset
 # Combined data: the covariate's effect may also differ by study period (covariate:dataset), so moderation is not confounded with the change between study periods
-# Reason for visiting was asked in PIH only; gender is tested in PIH only (TGD participants were identified in PIH only)
+# Reason for visiting was asked in PIH only; gender is tested in each dataset separately, not combined (TGD participants were identified in PIH only)
 # Fit moderation models, keeping results only; plot data for the combined data only
 moderation <- expand_grid(
   dataset = c("PIMH", "PIH", "Combined"),
   moderator = names(covariate_values)
 ) %>%
-  filter(!moderator %in% c("referral_recoded", "gender") | dataset == "PIH") %>%
+  filter(moderator != "referral_recoded" | dataset == "PIH", moderator != "gender" | dataset != "Combined") %>%
   mutate(
     data = list(PIMH = pimh_c, PIH = pih_c, Combined = all_c)[dataset],
     base = c(PIMH = pimh_model_base, PIH = pih_model_base, Combined = all_model_base)[dataset],
