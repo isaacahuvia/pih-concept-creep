@@ -628,12 +628,33 @@ secondary_covariates <- list(
   race_recoded = NULL,
   gender = NULL,
   education = NULL,
-  political_id_numeric = c(1, 5, 10),
+  political_id_numeric = c(1, 4, 7), # 1-7 scale
   median_family_income = c(5, 10, 20), # In $10,000s
   dem_vote_share = c(.3, .5, .7),
   urban_rural = c(1, 4, 7, 10),
   provider_rate = c(100, 300, 500),
   referral_recoded = NULL
+)
+
+# Labels for plots
+secondary_labels <- c(
+  age = "Age",
+  race_recoded = "Race/Ethnicity",
+  gender = "Gender",
+  education = "Education",
+  political_id_numeric = "Political Ideology",
+  median_family_income = "Median Family Income (ZIP Code)",
+  dem_vote_share = "Democratic Vote Share (ZIP Code)",
+  urban_rural = "Urban/Rural Area (RUCA Code)",
+  provider_rate = "Mental Health Providers per 100,000 (County)",
+  referral_recoded = "Reason for Visiting Website"
+)
+
+secondary_value_labels <- list(
+  political_id_numeric = c("Strongly Liberal", "In the Middle", "Strongly Conservative"),
+  median_family_income = c("$50,000", "$100,000", "$200,000"),
+  dem_vote_share = c("30%", "50%", "70%"),
+  urban_rural = c("Metropolitan Core (1)", "Micropolitan Core (4)", "Small Town Core (7)", "Rural (10)")
 )
 
 # Fit each model
@@ -662,7 +683,10 @@ imap(
   kable_styling()
 
 # Visualized
-imap(secondary_covariates, ~ plot_curve_by(secondary[[.y]]$model, .y, .x)) %>%
+imap(
+  secondary_covariates,
+  ~ plot_curve_by(secondary[[.y]]$model, .y, .x, label = secondary_labels[[.y]], value_labels = secondary_value_labels[[.y]])
+) %>%
   walk(print)
 ```
 

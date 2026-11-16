@@ -114,6 +114,7 @@ summarize_models <- function(fit_models, exp = T) {
   fit_models %>%
     pool() %>%
     summary(conf.int = T, exponentiate = exp) %>%
+    select(term, estimate, std.error, p.value, conf.low = `2.5 %`, conf.high = `97.5 %`) %>%
     kable(digits = 3) %>%
     kable_styling()
 
@@ -355,17 +356,18 @@ plot_curve <- function(
 }
 
 # Third plot type: self-labeling by symptom severity, by levels of a covariate (for models without year)
-plot_curve_by <- function(fit_models, variable, values = NULL, severity = 0:21) {
+# label names the variable in the legend; value_labels (optional) name the values, in order
+plot_curve_by <- function(fit_models, variable, values = NULL, label = variable, value_labels = NULL, severity = 0:21) {
 
   point_predictions(fit_models, years = NULL, severity = severity, moderator = variable, moderator_values = values) %>%
     as_tibble() %>%
-    mutate(group = factor(.data[[variable]])) %>%
+    mutate(group = if (is.null(value_labels)) factor(.data[[variable]]) else factor(.data[[variable]], levels = values, labels = value_labels)) %>%
     ggplot(aes(x = depression_sum, y = estimate, color = group, fill = group)) +
     geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = .2, color = NA) +
     geom_line() +
     scale_x_continuous(breaks = seq(0, 21, 3)) +
     scale_y_continuous(labels = scales::label_percent(), limits = c(0, 1)) +
-    labs(x = "DASS-21 depression sum", y = "Predicted probability of self-labeling", color = variable, fill = variable) +
+    labs(x = "DASS-21 Depression Sum Score", y = "Predicted Probability of Self-Labeling", color = label, fill = label) +
     theme_minimal() +
     theme(legend.position = "top")
 
