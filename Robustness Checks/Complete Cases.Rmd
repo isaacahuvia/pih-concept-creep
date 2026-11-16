@@ -26,10 +26,10 @@ pih_c <- readRDS(here("Data", "PIH - 2019-Current", "pih_completed.rds"))
 all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
 ```
 
-```{r fit, warning = F}
+```{r fit}
 model_variables <- c("dep_self_label_now", "depression_sum", "decimal_year_centered", "age", "race_recoded", "gender", "education", "dataset")
 
-# Complete cases are passed to fit_models() as a list of one dataset; pool() warns that there is nothing to pool (suppressed)
+# Complete cases are passed to fit_models() as a list of one dataset (no pooling)
 specifications <- tribble(
   ~dataset,   ~imputed, ~complete_cases,                                    ~years,        ~extra,
   "PIMH",     pimh_c,   list(drop_na(pimh_ni, all_of(model_variables))),   c(2016, 2019), "",

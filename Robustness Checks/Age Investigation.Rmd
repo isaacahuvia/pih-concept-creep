@@ -31,13 +31,6 @@ all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
 
 # PIH participants who answered the referral question (completed data keep the original row order)
 pih_c_observed <- map(pih_c, ~ filter(.x, !is.na(pih_ni$referral_recoded)))
-
-# Pull one term's pooled estimate (log-odds) from a model; term_names lists accepted spellings
-pooled_term <- function(fit_models, term_names) {
-  summary(pool(fit_models), conf.int = T) %>%
-    filter(term %in% term_names) %>%
-    select(term, estimate, std.error, p.value, conf.low = `2.5 %`, conf.high = `97.5 %`)
-}
 ```
 
 ## 0. Age and Reason for Visiting (Observed Data)
@@ -175,7 +168,7 @@ age_by_year <- tribble(
 ) %>%
   mutate(
     formula = formula %+% " + age:decimal_year_centered",
-    term = map2(data, formula, ~ fit_models(.x, as.formula(.y)) %>% pooled_term(c("decimal_year_centered:age", "age:decimal_year_centered")))
+    term = map2(data, formula, ~ fit_models(.x, .y) %>% pooled_coefficients() %>% filter(term %in% c("decimal_year_centered:age", "age:decimal_year_centered")))
   )
 
 age_by_year %>%
