@@ -4,7 +4,7 @@ output: html_document
 date: "`r Sys.Date()`"
 ---
 
-The primary analyses use a cubic term for `depression_sum`, chosen in `Main Analysis.Rmd` section 1.5. This check refits the primary models as preregistered, with a linear term, and compares predictions and risk ratios.
+The primary analyses use a cubic term for `depression_sum`, chosen in `Main Analysis.Rmd` section 1.5. This check refits the primary models as preregistered: with a linear term, and with the preregistered symptom x date interaction (prereg section 7). It compares predictions and risk ratios with the primary models.
 
 ```{r setup, message = F, warning = F}
 library(here)
@@ -23,7 +23,7 @@ all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
 ```
 
 ```{r fit}
-covariates <- " + decimal_year_centered + age + race_recoded + gender + education"
+covariates <- " + age + race_recoded + gender + education"
 
 specifications <- tribble(
   ~dataset,   ~data,  ~years,       ~extra,
@@ -32,28 +32,53 @@ specifications <- tribble(
   "Combined", all_c,  c(2016, 2026), " + dataset"
 )
 
-# Fit preregistered (linear) and primary (cubic) models; keep only predictions and risk ratios
-results <- specifications %>%
-  expand_grid(model = c("Preregistered (linear)", "Primary (cubic)")) %>%
-  mutate(
-    formula = if_else(model == "Primary (cubic)", "poly(depression_sum, 3)", "depression_sum"),
-    formula = "dep_self_label_now ~ " %+% formula %+% covariates %+% extra,
-    fit = map2(data, formula, ~ fit_models(.x, as.formula(.y))),
-    predictions = map2(fit, years, ~ as_tibble(point_predictions(.x, .y))),
-    ratios = map(fit, ~ as_tibble(risk_ratios(.x)))
+models <- c(
+  "Preregistered (linear)" = "depression_sum + decimal_year_centered",
+  "Preregistered (linear, with interaction)" = "depression_sum * decimal_year_centered",
+  "Primary (cubic)" = "poly(depression_sum, 3) + decimal_year_centered"
+)
+
+# Fit one model and keep only its pooled coefficients, predictions, and risk ratios (fitted models are not kept, to save memory)
+summarize_fit <- function(data, formula, years) {
+  fit <- fit_models(data, as.formula(formula))
+  tibble(
+    coefficients = list(summary(pool(fit), conf.int = T) %>% select(term, estimate, std.error, p.value, conf.low = `2.5 %`, conf.high = `97.5 %`)),
+    predictions = list(as_tibble(point_predictions(fit, years))),
+    ratios = list(as_tibble(risk_ratios(fit)))
   )
+}
+
+results <- specifications %>%
+  expand_grid(model = names(models)) %>%
+  mutate(
+    formula = "dep_self_label_now ~ " %+% models[model] %+% covariates %+% extra,
+    summaries = pmap(list(data, formula, years), summarize_fit)
+  ) %>%
+  select(-data) %>%
+  unnest(summaries)
 ```
 
-## Coefficients, Preregistered Models (Log-Odds)
+## Preregistered Symptom x Date Interaction (Log-Odds)
+
+```{r interaction}
+results %>%
+  filter(model == "Preregistered (linear, with interaction)") %>%
+  select(dataset, coefficients) %>%
+  unnest(coefficients) %>%
+  filter(term == "depression_sum:decimal_year_centered") %>%
+  kable(digits = 4) %>%
+  kable_styling()
+```
+
+## Coefficients, Preregistered Models Without Interaction (Log-Odds)
 
 ```{r coefficients}
-preregistered <- results %>%
+results %>%
   filter(model == "Preregistered (linear)") %>%
-  pull(fit, name = dataset)
-
-summarize_models(preregistered$PIMH, exp = F)
-summarize_models(preregistered$PIH, exp = F)
-summarize_models(preregistered$Combined, exp = F)
+  select(dataset, coefficients) %>%
+  unnest(coefficients) %>%
+  kable(digits = 3) %>%
+  kable_styling()
 ```
 
 ## Risk Ratios per Year

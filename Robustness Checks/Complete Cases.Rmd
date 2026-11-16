@@ -38,14 +38,23 @@ specifications <- tribble(
 ) %>%
   mutate(formula = "dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education" %+% extra)
 
+# Fit one model and keep only its predictions and risk ratios (fitted models are not kept, to save memory)
+summarize_fit <- function(data, formula, years) {
+  fit <- fit_models(data, as.formula(formula))
+  tibble(
+    predictions = list(as_tibble(point_predictions(fit, years))),
+    ratios = list(as_tibble(risk_ratios(fit)))
+  )
+}
+
 results <- specifications %>%
   pivot_longer(c(imputed, complete_cases), names_to = "data_type", values_to = "data") %>%
   mutate(
     n = map_int(data, ~ nrow(.x[[1]])),
-    fit = map2(data, formula, ~ fit_models(.x, as.formula(.y))),
-    predictions = map2(fit, years, ~ as_tibble(point_predictions(.x, .y))),
-    ratios = map(fit, ~ as_tibble(risk_ratios(.x)))
-  )
+    summaries = pmap(list(data, formula, years), summarize_fit)
+  ) %>%
+  select(-data) %>%
+  unnest(summaries)
 ```
 
 ## Sample Sizes

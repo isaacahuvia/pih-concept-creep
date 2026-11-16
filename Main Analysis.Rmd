@@ -9,6 +9,7 @@ editor_options:
 ```{r setup, message = F, warning = F}
 ## Set chunk options
 knitr::opts_chunk$set(
+  autodep = T, # Re-run cached chunks when objects they use from other chunks change
   # Some chunks cache objects; reset them if data changes
   cache.extra = tools::md5sum(c(
     list.files(here::here("Data"), recursive = T, full.names = T),
@@ -52,18 +53,6 @@ severity_labels <- c(
   "12"  = "High (DASS = 12)"
 )
 
-label_severity <- function(x) factor(severity_labels[as.character(x)], levels = severity_labels)
-
-label_study_period <- function(dataset) {
-  recode_values(
-    dataset,
-    "PIMH" ~ "First Study Period (2016-2019)",
-    "PIH" ~ "Second Study Period (2019-2026)"
-  )
-}
-
-transition_date <- decimal_date(as_date("2019-08-21")) # First day of PIH data
-
 
 ## Load data
 # Non-imputed datasets ("_ni")
@@ -71,19 +60,10 @@ pimh_ni <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_with_geo.rds"))
 pih_ni <- readRDS(here("Data", "PIH - 2019-Current", "pih_with_geo.rds"))
 all_ni <- bind_rows(pimh_ni, pih_ni)
 
-# Imputed ("_i")
-pimh_i <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_imputed.rds"))
-pih_i <- readRDS(here("Data", "PIH - 2019-Current", "pih_imputed.rds"))
-
 # Completed ("_c")
 pimh_c <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_completed.rds"))
 pih_c <- readRDS(here("Data", "PIH - 2019-Current", "pih_completed.rds"))
 all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
-
-# Stacked datasets ("_s")
-pimh_s <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_stacked.rds"))
-pih_s <- readRDS(here("Data", "PIH - 2019-Current", "pih_stacked.rds"))
-all_s <- readRDS(here("Data", "PIMH + PIH Combined", "all_stacked.rds"))
 ```
 
 # 1. Sample Description
@@ -425,7 +405,7 @@ The preregistered primary analysis model is `dep_self_label_now ~ depression_sum
 
 Per the above analyses, the functional form is better represented by the function `dep_self_label_now ~ poly(depression_sum, 3) + decimal_year_centered + age + race_recoded + gender + education`.
 
-For the primary analysis, we use the best-fit functions above. We report findings from simpler, preregistered models in `Supporting Analyses.Rmd`.
+For the primary analysis, we use the best-fit functions above. We report findings from simpler, preregistered models in `Robustness Checks/Preregistered Models.Rmd`.
 
 ## 2.1. Primary Regression Results
 
@@ -533,9 +513,9 @@ There is no evidence of moderation by education, i.e., concept creep is observed
 ```{r, moderation-political-id, cache = T}
 # Fit moderation models
 moderation_political_id <- list(
-  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "political_id"),
-  "PIH" = fit_moderation(pih_c, pih_model_base, "political_id"),
-  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:political_id", "political_id")
+  "PIMH" = fit_moderation(pimh_c, pimh_model_base, "political_id_numeric"),
+  "PIH" = fit_moderation(pih_c, pih_model_base, "political_id_numeric"),
+  "Combined" = fit_moderation(all_c, all_model_base %+% " + dataset:political_id_numeric", "political_id_numeric")
 )
 
 map(moderation_political_id, "test") %>% bind_rows(.id = "dataset")
@@ -667,7 +647,7 @@ map(secondary, "test") %>%
   kable(digits = 3) %>%
   kable_styling()
 
-# Risk ratios between levels of each covariate, at each severity level
+# Risk ratios between levels of each covariate, at DASS = 8.5
 imap(
   secondary_covariates,
   ~ risk_ratios(
