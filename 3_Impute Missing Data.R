@@ -1,7 +1,7 @@
 #### Set iterations
 # For data exploration, 5
 # For preregistered analyses, 100
-iter = 5
+n_imputations = 5
 
 
 
@@ -31,7 +31,8 @@ prep_for_mice <- function(data) {
 exclude_from_mice <- c(
   "user_id", "session_id", "dataset", "date", "year", "decimal_year_centered",
   "country", "zip", "zcta", "county", "response_time", "res_ratio", "referral",
-  "race", "depression" %+% 1:7, "saw_dep_self_label", "dep_self_label_ever"
+  "race", "depression" %+% 1:7, "saw_dep_self_label", "dep_self_label_ever",
+  "political_id_numeric"
 )
 
 run_mice <- function(data, print = F) {
@@ -53,7 +54,7 @@ run_mice <- function(data, print = F) {
 
   futuremice(
     data,
-    m = iter,
+    m = n_imputations,
     method = meth,
     predictorMatrix = pred,
     parallelseed = 745802,
@@ -62,18 +63,27 @@ run_mice <- function(data, print = F) {
 
 }
 
+# Undo prep_for_mice() conversions after imputation
+restore_types <- function(data) {
+  data %>%
+    mutate(
+      across(c(dep_self_label_now, dep_self_label_past), ~ .x == "TRUE"),
+      political_id_numeric = as.numeric(political_id) # Recompute (convert to numeric) from imputed political_id
+    )
+}
+
 # Impute data, including `mice` output
 pimh_imputed <- run_mice(pimh)
 pih_imputed <- run_mice(pih)
 
 # Complete data, for modeling
-pimh_completed <- complete(pimh_imputed, action = "all")
-pih_completed <- complete(pih_imputed, action = "all")
+pimh_completed <- complete(pimh_imputed, action = "all") %>% map(restore_types)
+pih_completed <- complete(pih_imputed, action = "all") %>% map(restore_types)
 all_completed <- map2(pimh_completed, pih_completed, bind_rows)
 
 # Stack data, for some plots (not for modeling)
-pimh_stacked <- complete(pimh_imputed, action = "long")
-pih_stacked <- complete(pih_imputed, action = "long")
+pimh_stacked <- complete(pimh_imputed, action = "long") %>% restore_types()
+pih_stacked <- complete(pih_imputed, action = "long") %>% restore_types()
 all_stacked <- bind_rows(pimh_stacked, pih_stacked)
 
 
@@ -91,4 +101,4 @@ saveRDS(all_completed, here("Data", "PIMH + PIH Combined", "all_completed.rds"))
 # Save stacked
 saveRDS(pimh_stacked, here("Data", "PIMH - 2012-2019", "pimh_stacked.rds"))
 saveRDS(pih_stacked, here("Data", "PIH - 2019-Current", "pih_stacked.rds"))
-saveRDS(all_stacked, here("Data", "PIMH + PIH Combined", "pih_stacked.rds"))
+saveRDS(all_stacked, here("Data", "PIMH + PIH Combined", "all_stacked.rds"))

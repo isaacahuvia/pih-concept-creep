@@ -78,8 +78,6 @@ dass21_dep_other <- data.frame(
 # k                1 = raw 0-21 sums, 2 = doubled 0-42. NULL guesses: doubled if any score > 21
 # bw               density bandwidth on your metric; defaults to 1 raw point (k)
 # show_us          include the modelled US 2012 curve
-# show_percentiles dashed lines at the UK norm 50th, 75th, 90th and 95th percentiles
-# show_bands       solid lines at the midpoints of the manual's mild, moderate and severe bands
 # print            print the plot and summary table
 #
 # Returns (invisibly) a list:
@@ -90,8 +88,7 @@ dass21_dep_other <- data.frame(
 #            each person's score
 
 dass21_dep_compare <- function(data, var, group = NULL, k = NULL, bw = NULL,
-                               show_us = TRUE, show_percentiles = TRUE, show_bands = TRUE,
-                               print = TRUE) {
+                               show_us = TRUE, print = TRUE) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Please install ggplot2.")
 
   # Accept bare column names, quoted names, or a variable holding a quoted name
@@ -130,26 +127,23 @@ dass21_dep_compare <- function(data, var, group = NULL, k = NULL, bw = NULL,
     keep <- keep & !is.na(data[[group]])
   }
   samp <- data.frame(x = x[keep])
-  samp$grp <- if (is.null(group)) factor("My sample") else factor(data[[group]][keep])
+  samp$grp <- if (is.null(group)) factor("Current Study") else factor(data[[group]][keep])
 
   # Summary table on the raw metric
   summ <- do.call(rbind, lapply(split(samp$x / k, samp$grp), function(xr)
     data.frame(n = length(xr), mean = mean(xr), sd = sd(xr), median = median(xr),
                pct_zero = 100 * mean(xr == 0))))
-  summ <- data.frame(sample = if (is.null(group)) "My sample" else paste0("My sample: ", group, " = ", rownames(summ)),
+  summ <- data.frame(sample = if (is.null(group)) "Current Study" else paste0("Current Study: ", group, " = ", rownames(summ)),
                      summ, row.names = NULL)
   summ <- rbind(summ, dass21_dep_other)
 
   # Norm curves on your metric
-  norm <- data.frame(dass21_dep_norm[c("score", "pct", "cum_pct")], source = "UK norms (2005)")
+  norm <- data.frame(dass21_dep_norm[c("score", "pct", "cum_pct")], source = "UK Norms (2005)")
   if (show_us) norm <- rbind(norm, data.frame(dass21_dep_us_modelled[c("score", "pct", "cum_pct")],
-                                              source = "US 2012 (modelled)"))
+                                              source = "US Norms (2012)"))
   norm$x <- norm$score * k
   norm$w <- norm$pct / 100
-  uk <- norm[norm$source == "UK norms (2005)", ]
-
-  norm_q   <- sapply(c(p50 = 50, p75 = 75, p90 = 90, p95 = 95), function(p) min(uk$x[uk$cum_pct >= p]))
-  band_mid <- c(Mild = 5.5, Moderate = 8.5, Severe = 12) * k   # raw bands 5-6, 7-10, 11-13
+  uk <- norm[norm$source == "UK Norms (2005)", ]
 
   # Sample curves in colour, norm curves in grey with their own line types
   n_grp <- nlevels(samp$grp)
@@ -162,24 +156,15 @@ dass21_dep_compare <- function(data, var, group = NULL, k = NULL, bw = NULL,
     ggplot2::geom_density(data = norm, ggplot2::aes(x, weight = w, linetype = source),
                           bw = bw, colour = "grey35", linewidth = 0.6, key_glyph = "path") +
     ggplot2::scale_colour_manual(values = grp_cols, name = if (is.null(group)) NULL else group) +
-    ggplot2::scale_linetype_manual(values = c("UK norms (2005)" = "solid", "US 2012 (modelled)" = "22"),
+    ggplot2::scale_linetype_manual(values = c("UK Norms (2005)" = "solid", "US Norms (2012)" = "22"),
                                    name = NULL) +
     ggplot2::guides(colour = ggplot2::guide_legend(order = 1),
                     linetype = ggplot2::guide_legend(order = 2)) +
     ggplot2::scale_x_continuous(limits = c(0, 21 * k), expand = ggplot2::expansion(mult = c(0.02, 0.02))) +
-    ggplot2::labs(x = paste0("DASS-21 Depression (", if (k == 1) "raw, 0-21" else "doubled, 0-42", ")"),
+    ggplot2::labs(x = paste0("DASS-21 Depression Sum Score (", if (k == 1) "0-21" else "0-42, doubled", ")"),
                   y = "Density") +
     ggplot2::theme_minimal() +
     ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
-
-  if (show_percentiles) p <- p +
-    ggplot2::geom_vline(xintercept = norm_q, linetype = "dashed", colour = "grey60") +
-    ggplot2::annotate("text", x = norm_q, y = Inf, label = names(norm_q),
-                      vjust = 1.5, hjust = 1.15, size = 3, colour = "grey45")
-  if (show_bands) p <- p +
-    ggplot2::geom_vline(xintercept = band_mid, linewidth = 0.4, colour = "grey25") +
-    ggplot2::annotate("text", x = band_mid, y = Inf, label = names(band_mid),
-                      vjust = 3.5, hjust = -0.1, size = 3, colour = "grey15")
 
   # Where each person falls in the UK norm distribution
   data$dep_norm_pct <- uk$cum_pct[match(x, uk$x)]

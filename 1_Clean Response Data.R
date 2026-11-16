@@ -136,6 +136,7 @@ pimh_mutated <- pimh_raw %>%
           "Strongly Conservative"),
         ordered = T
       ),
+    political_id_numeric = as.numeric(political_id),
     zip = if_else(grepl("^[0-9]{5}$", dem_zipcode), dem_zipcode, NA_character_),
     response_time = rowSums(across(ends_with("rt") & !ends_with("trt")), na.rm = TRUE) / 60000
   ) %>%
@@ -148,7 +149,7 @@ pimh_mutated <- pimh_raw %>%
     starts_with("dep_self_label"), dep_dx,
     all_of("depression" %+% 1:7), depression_sum,
     age = consentage, race, race_recoded, gender, education,
-    political_id, zip, country = dem_residence,
+    political_id, political_id_numeric, zip, country = dem_residence,
     response_time, saw_dep_self_label = mhdem00
   )
 
@@ -293,6 +294,7 @@ pih_mutated <- pih_raw %>%
         "Strongly Conservative"),
       ordered = T
     ),
+    political_id_numeric = as.numeric(political_id),
     referral = broughtwebsite %>%
       replace_values(c("", "null", ".") ~ NA),
     referral_recoded = referral %>%
@@ -319,7 +321,7 @@ pih_mutated <- pih_raw %>%
     starts_with("dep_self_label"),
     all_of("depression" %+% 1:7), depression_sum,
     age, race, race_recoded, gender, education,
-    political_id, referral, referral_recoded, zip, country = countryres,
+    political_id, political_id_numeric, referral, referral_recoded, zip, country = countryres,
     response_time
   )
 
