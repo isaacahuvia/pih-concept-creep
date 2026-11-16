@@ -434,7 +434,7 @@ point_predictions(all_model_primary, c(2016, 2026), print = T)
 risk_ratios(all_model_primary, print = T)
 ```
 
-### 2.1.1. Primary Regression Results, Visualized
+## 2.2. Primary Regression Results, Visualized
 
 For the sake of parsimony, and because results do not differ meaningfully between datasets, results will be visualized using the combined model.
 
@@ -443,9 +443,11 @@ plot_trend(all_model_primary)
 plot_curve(all_model_primary)
 ```
 
-## 2.2. Moderation of Primary Regression Results
+# 3. Secondary Analyses
 
-### 2.2.1. Moderation by Age
+## 3.1. Moderation of Primary Analyses
+
+### 3.1.1. Moderation by Age
 
 ```{r, moderation-age, cache = T}
 # Set values
@@ -463,7 +465,7 @@ map(moderation_age, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by age, i.e., concept creep is observed in similar amounts across ages.
 
-### 2.2.2. Moderation by Race/Ethnicity
+### 3.1.2. Moderation by Race/Ethnicity
 
 ```{r, moderation-race, cache = T}
 # Fit moderation models
@@ -478,7 +480,7 @@ map(moderation_race, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by race, i.e., concept creep is observed in similar amounts across racial groups.
 
-### 2.2.3. Moderation by Gender
+### 3.1.3. Moderation by Gender
 
 ```{r, moderation-gender, cache = T}
 # Fit moderation models
@@ -493,7 +495,7 @@ map(moderation_gender, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by gender, i.e., concept creep is observed in similar amounts across gender groups.
 
-### 2.2.4. Moderation by Education
+### 3.1.4. Moderation by Education
 
 ```{r, moderation-education, cache = T}
 # Fit moderation models
@@ -508,7 +510,7 @@ map(moderation_education, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by education, i.e., concept creep is observed in similar amounts across education groups.
 
-### 2.2.5. Moderation by Political Ideology
+### 3.1.5. Moderation by Political Ideology
 
 ```{r, moderation-political-id, cache = T}
 # Fit moderation models
@@ -523,7 +525,7 @@ map(moderation_political_id, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by political ideology, i.e., concept creep is observed in similar amounts across political groups.
 
-### 2.2.6. Moderation by Urban/Rural Area
+### 3.1.6. Moderation by Urban/Rural Area
 
 ```{r, moderation-urban-rural, cache = T}
 # Fit moderation models
@@ -538,7 +540,7 @@ map(moderation_urban_rural, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by urban/rural area, i.e., concept creep is observed in similar amounts across urban and rural areas.
 
-### 2.2.7. Moderation by Liberal/Conservative Area
+### 3.1.7. Moderation by Liberal/Conservative Area
 
 ```{r, moderation-liberal-conservative, cache = T}
 # Fit moderation models
@@ -553,7 +555,7 @@ map(moderation_dem_vote_share, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by liberal/conservative area, i.e., concept creep is observed in similar amounts across liberal and conservative areas.
 
-### 2.2.8. Moderation by High/Low Income Area
+### 3.1.8. Moderation by High/Low Income Area
 
 ```{r, moderation-area-income, cache = T}
 # Fit moderation models
@@ -568,7 +570,7 @@ map(moderation_median_family_income, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by high/low income area, i.e., concept creep is observed in similar amounts across high- and low-income areas.
 
-### 2.2.9. Moderation by High/Low Treatment Access Area
+### 3.1.9. Moderation by High/Low Treatment Access Area
 
 ```{r, moderation-treatment-access, cache = T}
 # Fit moderation models
@@ -583,7 +585,7 @@ map(moderation_provider_rate, "test") %>% bind_rows(.id = "dataset")
 
 There is no evidence of moderation by high/low treatment access area, i.e., concept creep is observed in similar amounts across high- and low-treatment access areas.
 
-### 2.2.10. Moderation by Reason for Visiting Website
+### 3.1.10. Moderation by Reason for Visiting Website
 
 ```{r, moderation-referral, cache = T}
 # Fit moderation model
@@ -594,9 +596,8 @@ moderation_referral_recoded$test
 
 There is no evidence of moderation by reason for visiting website, i.e., concept creep is observed in similar amounts across participants visiting the website for school, work, or other reasons.
 
-# 3. Secondary Analyses
 
-## 3.1. Concept Breadth by Participant Characteristics
+## 3.2. Concept Breadth by Participant Characteristics
 
 ```{r cb-by-char, cache = T}
 # Baseline model for these tests
