@@ -1,0 +1,86 @@
+---
+title: "Robustness Check: Complete Cases"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+The primary analyses use multiply imputed data. This check refits the primary models to complete cases (non-imputed data, dropping rows missing any model variable) and compares predictions and risk ratios.
+
+```{r setup, message = F, warning = F}
+library(here)
+library(knitr)
+library(kableExtra)
+library(mice)
+library(marginaleffects)
+library(tidyverse)
+`%+%` <- paste0
+
+source(here("Helper Functions", "Analysis Functions.R"))
+
+pimh_ni <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_with_geo.rds"))
+pih_ni <- readRDS(here("Data", "PIH - 2019-Current", "pih_with_geo.rds"))
+all_ni <- bind_rows(pimh_ni, pih_ni)
+
+pimh_c <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_completed.rds"))
+pih_c <- readRDS(here("Data", "PIH - 2019-Current", "pih_completed.rds"))
+all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
+```
+
+```{r fit}
+model_variables <- c("dep_self_label_now", "depression_sum", "decimal_year_centered", "age", "race_recoded", "gender", "education", "dataset")
+
+# Complete cases are passed to fit_models() as a list of one dataset (no pooling)
+specifications <- tribble(
+  ~dataset,   ~imputed, ~complete_cases,                                    ~years,        ~extra,
+  "PIMH",     pimh_c,   list(drop_na(pimh_ni, all_of(model_variables))),   c(2016, 2019), "",
+  "PIH",      pih_c,    list(drop_na(pih_ni, all_of(model_variables))),    c(2019, 2026), "",
+  "Combined", all_c,    list(drop_na(all_ni, all_of(model_variables))),    c(2016, 2026), " + dataset"
+) %>%
+  mutate(formula = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education" %+% extra)
+
+# Fit each model, keeping results only (summarize_fit() in Analysis Functions.R)
+results <- specifications %>%
+  pivot_longer(c(imputed, complete_cases), names_to = "data_type", values_to = "data") %>%
+  mutate(
+    n = map_int(data, ~ nrow(.x[[1]])),
+    summaries = pmap(list(data, formula, years), ~ summarize_fit(..1, ..2, years = ..3)),
+    predictions = map(summaries, "predictions"),
+    ratios = map(summaries, "ratios")
+  ) %>%
+  select(-data, -summaries)
+```
+
+## Sample Sizes
+
+```{r n}
+results %>%
+  select(dataset, data_type, n) %>%
+  pivot_wider(names_from = data_type, values_from = n) %>%
+  mutate(pct_retained = 100 * complete_cases / imputed) %>%
+  kable(digits = 1) %>%
+  kable_styling()
+```
+
+## Risk Ratios per Year
+
+```{r ratios}
+results %>%
+  select(dataset, data_type, ratios) %>%
+  unnest(ratios) %>%
+  select(dataset, data_type, depression_sum, estimate, conf.low, conf.high) %>%
+  kable(digits = 3) %>%
+  kable_styling()
+```
+
+## Point Predictions
+
+```{r predictions}
+results %>%
+  select(dataset, data_type, predictions) %>%
+  unnest(predictions) %>%
+  select(dataset, data_type, depression_sum, year = decimal_year, estimate, conf.low, conf.high) %>%
+  kable(digits = 3) %>%
+  kable_styling()
+```
