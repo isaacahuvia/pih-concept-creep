@@ -1,4 +1,4 @@
-####  Summarize data  ####
+####  Summarize  ####
 # Summarize a categorical variable by dataset as n (%), with %s excluding missing values
 # Cells with no observations (i.e., levels not assessed in a dataset) are shown as "—"
 summarize_categorical <- function(data, var, label) {
@@ -42,8 +42,8 @@ summarize_continuous <- function(data, var, label, accuracy, prefix = "") {
 
 
 
-####  Work with models  ####
-# Fitted models are large (about 45 MB per imputed dataset), so functions below keep results, not models
+####  Model  ####
+# Fitted models are large (about 45 MB per imputed dataset), so functions below keep results, not model objects
 
 # Fit logistic models to completed imputed data
 fit_models <- function(completed_data, model_formula) {
@@ -52,9 +52,13 @@ fit_models <- function(completed_data, model_formula) {
 
   fit_models <- map(
     .x = completed_data,
-    # Keep only the model's variables (smaller models and prediction grids); do.call() stores the data itself in
-    # each model's call, so marginaleffects always recovers the right data
-    .f = ~ do.call("glm", list(formula = model_formula, data = select(.x, all_of(all.vars(model_formula))), family = binomial))
+    .f = ~ do.call( # do.call() stores the data itself in each call, so marginaleffects always recovers the right data
+      "glm",
+      list(
+        formula = model_formula,
+        data = select(.x, all_of(all.vars(model_formula))), # Keep only the model's variables (smaller models and prediction grids)
+        family = binomial)
+      )
   ) %>%
     as.mira()
 
@@ -340,7 +344,7 @@ compare_models <- function(
 
 
 
-####  Plot trends  ####
+####  Plot  ####
 # These take prediction data from summarize_fit(), fit_moderation(), or fit_secondary()
 # Prediction data with a `group` column (see label_groups()) are drawn one panel or color per group
 

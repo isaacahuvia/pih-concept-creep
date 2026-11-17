@@ -10,8 +10,7 @@ editor_options:
 ## Set chunk options
 knitr::opts_chunk$set(
   autodep = T, # Re-run cached chunks when objects they use from other chunks change
-  # Some chunks cache objects; reset them if data changes
-  cache.extra = tools::md5sum(c(
+  cache.extra = tools::md5sum(c( # Re-run cached chunks when data or helper functions change
     list.files(here::here("Data"), recursive = T, full.names = T),
     here::here("Helper Functions", "Analysis Functions.R")
   ))
@@ -60,23 +59,23 @@ covariate_values <- list(
   race_recoded = NULL,
   gender = NULL,
   education = NULL,
-  political_id_numeric = c(1, 4, 7), # 1-7 scale
+  political_id_numeric = c(1, 4, 7), # Left, middle, right
   median_family_income = c(5, 10, 20), # In $10,000s
   dem_vote_share = c(.3, .5, .7),
-  urban_rural = c(1, 4, 7, 10),
+  urban_rural = c(1, 4, 7, 10), # Metro, micro, town, rural
   provider_rate = c(100, 300, 500),
   referral_recoded = NULL
 )
 
 # Units for odds ratios of numeric covariates (e.g., age per 10 years); factors: 1
 covariate_units <- c(
-  age = 10,
+  age = 10, # 10 years
   race_recoded = 1,
   gender = 1,
   education = 1,
   political_id_numeric = 1,
-  median_family_income = 1, # $10,000
-  dem_vote_share = .1, # 10 percentage points
+  median_family_income = 1, # In $10,000s
+  dem_vote_share = .1, # i.e., 10 percentage points
   urban_rural = 1,
   provider_rate = 100, # 100 per 100,000
   referral_recoded = 1
@@ -123,7 +122,7 @@ all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
 ## Variables to report
 # Categorical: reported as n (%), with %s excluding missing values
 categorical_vars <- c(
-  "Currently self-labels as depressed" = "dep_self_label_now",
+  "Currently self-labels as having depression" = "dep_self_label_now",
   "Race/ethnicity" = "race_recoded",
   "Gender" = "gender",
   "Education" = "education",
@@ -134,12 +133,12 @@ categorical_vars <- c(
 
 # Continuous: reported as mean (SD), formatted to the given accuracy
 continuous_vars <- tribble(
-  ~var,                   ~label,                                        ~accuracy, ~prefix,
-  "depression_sum",       "DASS-21 depression sum score",                .01,       "",
-  "age",                  "Age",                                         .1,        "",
-  "dem_vote_share",       "Democratic vote share, ZIP code (%)",         .1,        "",
-  "median_family_income", "Median family income, ZIP code (2024 $)",     1,         "$",
-  "provider_rate",        "Mental health providers per 100,000, county", .1,        ""
+  ~var,                   ~label,                                              ~accuracy, ~prefix,
+  "depression_sum",       "DASS-21 depression sum score",                     .01,       "",
+  "age",                  "Age",                                              .1,        "",
+  "dem_vote_share",       "Democratic vote share, ZIP code (%)",              .1,        "",
+  "median_family_income", "Median family income, ZIP code (in 2024 dollars)", 1,         "$",
+  "provider_rate",        "Mental health providers per 100,000, county",      .1,        ""
 )
 
 ruca_labels <- c("1-3: Metropolitan", "4-6: Micropolitan", "7-9: Small Town", "10: Rural")
@@ -264,7 +263,7 @@ trends_by_year %>%
 
 From these plots a few things are apparent:
 
-* There is a significant discontinuity when data collection switched from PIMH to PIH; the sample got slightly less depressed, and self-labeled less (it makes sense that these things went down together). I would think this probably corresponds to shifts in sampling mechanisms across periods.
+* There is a significant discontinuity when data collection switched from PIMH to PIH; the sample got slightly less depressed, and self-labeled less (it makes sense that these things went down together). I would think this corresponds to shifts in sampling mechanisms across periods.
 * Depression symptom severity in our sample matches nationwide trends in young adults; rising over time, peaking during the pandemic, and reducing afterwards.
 * Depression self-labeling follows a similar trend. However, if you look closely, you can see the self-labeling trends are slightly tilted upwards, i.e., have a stronger slope; that is reflected in the modeling below.
 
@@ -274,9 +273,9 @@ These plots give us a good sense of general trends, but it's hard to examine fun
 
 The preregistered primary analysis model is `dep_self_label_now ~ depression_sum + decimal_year_centered + age + race_recoded + gender + education`.
 
-Per the analyses in `Examine Functional Form.Rmd`, the functional form is better represented by the function `dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education`.
+Per the analyses in `Examine Functional Form.Rmd`, the relationship between time and self-labeling is linear, but the relationship between depressive symptom severity and self-labeling is polynomial (cubic). The functional form of the model is thus better represented by the function `dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education`.
 
-For the primary analysis, we use the best-fit functions above. We report findings from simpler, preregistered models in `Robustness Checks/Preregistered Models.Rmd`.
+For the primary analysis, we use the best-fit functions above. We report findings from simpler, preregistered models in `Robustness Checks/Preregistered Models.Rmd`. Findings are robust across operationalizations.
 
 ## 2.1. Primary Regression Results
 
@@ -393,9 +392,6 @@ We see significant differences in concept breadth (i.e., propensity to self-labe
 
 Robustness checks are reported in the folder `Robustness Checks/`. They include:
 
-* Primary analyses using simple preregistered models
-* Primary analyses using complete cases
-* Primary analyses controlling for `referral_recoded`
-* Robustness checks around age findings, including:
-  * Age findings, controlling for `referral_recoded` or other potential confounders
-  * Age findings, binned (18-22, 25+)
+* `Preregistered Models.Rmd`: Primary analyses using simple preregistered models
+* `Complete Cases.Rmd`: Primary analyses using complete cases
+* `Age Investigation.Rmd`: Robustness checks and a replication of age findings
