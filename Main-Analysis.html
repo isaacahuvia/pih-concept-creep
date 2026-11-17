@@ -10,7 +10,7 @@
 
 
 
-<meta name="date" content="2026-11-16" />
+<meta name="date" content="2026-11-17" />
 
 <title>Depression Concept Creep, 2016-2026</title>
 
@@ -574,7 +574,7 @@ display: none;
 
 
 <h1 class="title toc-ignore">Depression Concept Creep, 2016-2026</h1>
-<h4 class="date">2026-11-16</h4>
+<h4 class="date">2026-11-17</h4>
 
 </div>
 
@@ -582,8 +582,7 @@ display: none;
 <pre class="r"><code>## Set chunk options
 knitr::opts_chunk$set(
   autodep = T, # Re-run cached chunks when objects they use from other chunks change
-  # Some chunks cache objects; reset them if data changes
-  cache.extra = tools::md5sum(c(
+  cache.extra = tools::md5sum(c( # Re-run cached chunks when data or helper functions change
     list.files(here::here(&quot;Data&quot;), recursive = T, full.names = T),
     here::here(&quot;Helper Functions&quot;, &quot;Analysis Functions.R&quot;)
   ))
@@ -632,23 +631,23 @@ covariate_values &lt;- list(
   race_recoded = NULL,
   gender = NULL,
   education = NULL,
-  political_id_numeric = c(1, 4, 7), # 1-7 scale
+  political_id_numeric = c(1, 4, 7), # Left, middle, right
   median_family_income = c(5, 10, 20), # In $10,000s
   dem_vote_share = c(.3, .5, .7),
-  urban_rural = c(1, 4, 7, 10),
+  urban_rural = c(1, 4, 7, 10), # Metro, micro, town, rural
   provider_rate = c(100, 300, 500),
   referral_recoded = NULL
 )
 
 # Units for odds ratios of numeric covariates (e.g., age per 10 years); factors: 1
 covariate_units &lt;- c(
-  age = 10,
+  age = 10, # 10 years
   race_recoded = 1,
   gender = 1,
   education = 1,
   political_id_numeric = 1,
-  median_family_income = 1, # $10,000
-  dem_vote_share = .1, # 10 percentage points
+  median_family_income = 1, # In $10,000s
+  dem_vote_share = .1, # i.e., 10 percentage points
   urban_rural = 1,
   provider_rate = 100, # 100 per 100,000
   referral_recoded = 1
@@ -692,7 +691,7 @@ all_c &lt;- readRDS(here(&quot;Data&quot;, &quot;PIMH + PIH Combined&quot;, &quo
 <pre class="r"><code>## Variables to report
 # Categorical: reported as n (%), with %s excluding missing values
 categorical_vars &lt;- c(
-  &quot;Currently self-labels as depressed&quot; = &quot;dep_self_label_now&quot;,
+  &quot;Currently self-labels as having depression&quot; = &quot;dep_self_label_now&quot;,
   &quot;Race/ethnicity&quot; = &quot;race_recoded&quot;,
   &quot;Gender&quot; = &quot;gender&quot;,
   &quot;Education&quot; = &quot;education&quot;,
@@ -703,12 +702,12 @@ categorical_vars &lt;- c(
 
 # Continuous: reported as mean (SD), formatted to the given accuracy
 continuous_vars &lt;- tribble(
-  ~var,                   ~label,                                        ~accuracy, ~prefix,
-  &quot;depression_sum&quot;,       &quot;DASS-21 depression sum score&quot;,                .01,       &quot;&quot;,
-  &quot;age&quot;,                  &quot;Age&quot;,                                         .1,        &quot;&quot;,
-  &quot;dem_vote_share&quot;,       &quot;Democratic vote share, ZIP code (%)&quot;,         .1,        &quot;&quot;,
-  &quot;median_family_income&quot;, &quot;Median family income, ZIP code (2024 $)&quot;,     1,         &quot;$&quot;,
-  &quot;provider_rate&quot;,        &quot;Mental health providers per 100,000, county&quot;, .1,        &quot;&quot;
+  ~var,                   ~label,                                              ~accuracy, ~prefix,
+  &quot;depression_sum&quot;,       &quot;DASS-21 depression sum score&quot;,                     .01,       &quot;&quot;,
+  &quot;age&quot;,                  &quot;Age&quot;,                                              .1,        &quot;&quot;,
+  &quot;dem_vote_share&quot;,       &quot;Democratic vote share, ZIP code (%)&quot;,              .1,        &quot;&quot;,
+  &quot;median_family_income&quot;, &quot;Median family income, ZIP code (in 2024 dollars)&quot;, 1,         &quot;$&quot;,
+  &quot;provider_rate&quot;,        &quot;Mental health providers per 100,000, county&quot;,      .1,        &quot;&quot;
 )
 
 ruca_labels &lt;- c(&quot;1-3: Metropolitan&quot;, &quot;4-6: Micropolitan&quot;, &quot;7-9: Small Town&quot;, &quot;10: Rural&quot;)
@@ -766,7 +765,7 @@ sample_description %&gt;%
   pack_rows(&quot;Continuous variables, mean (SD)&quot;, nrow(categorical_summary) + 1, nrow(sample_description), indent = F) %&gt;%
   row_spec(which(sample_description$is_header), bold = T) %&gt;%
   add_indent(which(!sample_description$is_header &amp; seq_len(nrow(sample_description)) &lt;= nrow(categorical_summary)))</code></pre>
-<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
 <thead>
 <tr>
 <th style="text-align:left;">
@@ -790,7 +789,7 @@ Combined (N = 59,578)
 </tr>
 <tr>
 <td style="text-align:left;font-weight: bold;">
-Currently self-labels as depressed
+Currently self-labels as having depression
 </td>
 <td style="text-align:center;font-weight: bold;">
 </td>
@@ -1306,7 +1305,7 @@ Democratic vote share, ZIP code (%)
 </tr>
 <tr>
 <td style="text-align:left;">
-Median family income, ZIP code (2024 $)
+Median family income, ZIP code (in 2024 dollars)
 </td>
 <td style="text-align:center;">
 $113,170 ($46,149)
@@ -1409,8 +1408,8 @@ trends_by_year %&gt;%
 <li>There is a significant discontinuity when data collection switched
 from PIMH to PIH; the sample got slightly less depressed, and
 self-labeled less (it makes sense that these things went down together).
-I would think this probably corresponds to shifts in sampling mechanisms
-across periods.</li>
+I would think this corresponds to shifts in sampling mechanisms across
+periods.</li>
 <li>Depression symptom severity in our sample matches nationwide trends
 in young adults; rising over time, peaking during the pandemic, and
 reducing afterwards.</li>
@@ -1430,11 +1429,15 @@ the relationship between primary variables.</p>
 <p>The preregistered primary analysis model is
 <code>dep_self_label_now ~ depression_sum + decimal_year_centered + age + race_recoded + gender + education</code>.</p>
 <p>Per the analyses in <code>Examine Functional Form.Rmd</code>, the
-functional form is better represented by the function
+relationship between time and self-labeling is linear, but the
+relationship between depressive symptom severity and self-labeling is
+polynomial (cubic). The functional form of the model is thus better
+represented by the function
 <code>dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education</code>.</p>
 <p>For the primary analysis, we use the best-fit functions above. We
 report findings from simpler, preregistered models in
-<code>Robustness Checks/Preregistered Models.Rmd</code>.</p>
+<code>Robustness Checks/Preregistered Models.Rmd</code>. Findings are
+robust across operationalizations.</p>
 <div id="primary-regression-results" class="section level2">
 <h2>2.1. Primary Regression Results</h2>
 <pre class="r"><code># Save baseline model formulas
@@ -5621,15 +5624,12 @@ to adjustment for covariates like referral source.</p>
 <p>Robustness checks are reported in the folder
 <code>Robustness Checks/</code>. They include:</p>
 <ul>
-<li>Primary analyses using simple preregistered models</li>
-<li>Primary analyses using complete cases</li>
-<li>Primary analyses controlling for <code>referral_recoded</code></li>
-<li>Robustness checks around age findings, including:
-<ul>
-<li>Age findings, controlling for <code>referral_recoded</code> or other
-potential confounders</li>
-<li>Age findings, binned (18-22, 25+)</li>
-</ul></li>
+<li><code>Preregistered Models.Rmd</code>: Primary analyses using simple
+preregistered models</li>
+<li><code>Complete Cases.Rmd</code>: Primary analyses using complete
+cases</li>
+<li><code>Age Investigation.Rmd</code>: Robustness checks and a
+replication of age findings</li>
 </ul>
 </div>
 
