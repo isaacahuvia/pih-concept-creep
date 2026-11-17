@@ -2,6 +2,8 @@
 title: "Robustness Check: Age Investigation"
 output: html_document
 date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
 ---
 
 Two age findings in `Main Analysis.Rmd` prompt this investigation:
@@ -177,3 +179,62 @@ age_by_year %>%
   kable(digits = 4) %>%
   kable_styling()
 ```
+
+## 5. Compare to Ahuvia 2026 Screener Data
+
+These data - depression self-labeling, depression symptom severity, and age - are also assessed in a 2026 study with CloudResearch participants (https://osf.io/egxhk). That study included ~4,000 respondents aged 18-29. Does the same age effect appear there?
+
+```{r, replication-1}
+replication_data <- here("..", "symptom-feedback-study", "Data", "Symptom Feedback Study Screener - Response Data.csv") %>%
+  read_csv(
+    col_select = c(
+      consent = consent_t0,
+      age = age_t0,
+      self_label_now = self_label_pres_t0,
+      self_label_past = self_label_past_t0,
+      diagnosis = diagnosis_t0,
+      treatment_now = treatment_pres_t0,
+      treatment_past = treatment_past_t0,
+      treatment_seeking = treatment_seeking_t0,
+      "phq_8_t1_" %+% 1:8
+    )
+  ) %>%
+  filter(
+    consent == "I agree",
+    age %in% 18:29
+  ) %>%
+  mutate(
+    age = as.numeric(age),
+    across(
+      all_of("phq_8_t1_" %+% 1:8),
+      ~ case_match(
+        .,
+        "Not at all" ~ 0,
+        "Several days" ~ 1,
+        "More than half the days" ~ 2,
+        "Nearly every day" ~ 3
+      )
+    ),
+    phq_8_sum = phq_8_t1_1 + phq_8_t1_2 + phq_8_t1_3 + phq_8_t1_4 + phq_8_t1_5 + phq_8_t1_6 + phq_8_t1_7 + phq_8_t1_8
+  )
+
+model <- glm(
+  data = replication_data,
+  formula = (self_label_now == "Yes") ~ phq_8_sum + age,
+  family = "binomial"
+)
+
+summary(model)
+
+predictions(model, newdata = datagrid(phq_8_sum = 0:24, age = c(18, 29))) %>%
+  ggplot(aes(x = phq_8_sum, y = estimate, color = factor(age), fill = factor(age))) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = .2, color = NA) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, 24, 3)) +
+  scale_y_continuous(labels = scales::label_percent(), limits = c(0, 1)) +
+  labs(x = "PHQ-8 Sum Score", y = "Predicted Probability of Self-Labeling", color = "Age", fill = "Age") +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+It's the same pattern!
