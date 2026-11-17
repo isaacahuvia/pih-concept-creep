@@ -2,6 +2,8 @@
 title: "Robustness Check: Preregistered Models"
 output: html_document
 date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
 ---
 
 The primary analyses use a cubic term for `depression_sum`, chosen in `Main Analysis.Rmd` section 1.5. This check refits the primary models as preregistered: with a linear term, and with the preregistered symptom x date interaction (prereg section 7). In the combined data, the interaction model also lets the symptom slope differ by study period. It compares predictions and risk ratios with the primary models.

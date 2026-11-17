@@ -2,6 +2,8 @@
 title: "Robustness Check: Complete Cases"
 output: html_document
 date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
 ---
 
 The primary analyses use multiply imputed data. This check refits the primary models to complete cases (non-imputed data, dropping rows missing any model variable) and compares predictions and risk ratios.
