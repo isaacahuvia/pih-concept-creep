@@ -213,7 +213,7 @@ dass21_dep_compare(all_ni, depression_sum)
 
 ## 1.3. Trends in Outcomes
 
-Trends in self-labeling and depressive symptom severity over time in the raw data; this is important historical context for our research questions, and it also allows us to examine the functional form of our models below.
+Trends in self-labeling and depressive symptom severity over time in the raw data; this is important context for our research questions, and it also allows us to examine the functional form of our models below.
 
 ```{r descriptive-trends}
 ## Observed trends in outcomes, by year (non-imputed data)
@@ -264,15 +264,24 @@ trends_by_year %>%
 
 From these plots a few things are apparent:
 
-* There is a significant discontinuity when data collection switched from PIMH to PIH; the sample got slightly less depressed, and self-labeled less (it makes sense that these things went down together).
+* There is a significant discontinuity when data collection switched from PIMH to PIH; the sample got slightly less depressed, and self-labeled less (it makes sense that these things went down together). I would think this probably corresponds to shifts in sampling mechanisms across periods.
 * Depression symptom severity in our sample matches nationwide trends in young adults; rising over time, peaking during the pandemic, and reducing afterwards.
-* Depression self-labeling follows a similar trend. However, if you look closely, you can see the self-labeling trends are slightly "tilted" upwards, i.e., have a stronger slope; that is reflected in the modeling below.
+* Depression self-labeling follows a similar trend. However, if you look closely, you can see the self-labeling trends are slightly tilted upwards, i.e., have a stronger slope; that is reflected in the modeling below.
 
 These plots give us a good sense of general trends, but it's hard to examine functional form from this. These plots do a better job; they're the raw data equivalent of the model plots below.
 
 ## 1.4. Functional Form, Visually
 
 ```{r examine-functional-form}
+## Self-labeling by symptom severity
+all_ni %>%
+  summarize(dep_self_label_now_p = mean(dep_self_label_now == 1), n = n(), .by = depression_sum) %>%
+  mutate(dep_self_label_now_logit = qlogis(dep_self_label_now_p)) %>%
+  ggplot(aes(x = depression_sum, y = dep_self_label_now_logit)) +
+  geom_point(aes(size = n)) +
+  geom_smooth(method = "lm", se = F) +
+  theme_minimal()
+
 ## Self-labeling by symptom severity by year
 all_ni %>%
   mutate(dataset = factor(dataset, levels = c("PIMH", "PIH"))) %>%
@@ -317,7 +326,9 @@ ggplot(banded, aes(x = decimal_year, y = dep_self_label_now, color = severity)) 
   theme(legend.position = "top")
 ```
 
-We're looking at a largely monotonous, and perhaps linear, positive trend between year and self-labeling after conditioning for symptom severity. The years stack up more cleanly at lower levels of depressive symptom severity than at higher levels; this can be modeled with some sort of transformation on symptom severity (e.g., higher-order terms). There doesn't look to be evidence for a non-linear transformation of year.
+The relationship between `depression_sum` and `dep_self_label_now` is clearly S-shaped, but non-linear.
+
+Regarding the relationship between `decimal_year` and `dep_self_label_now`, we're looking at a largely monotonous, perhaps linear relationship. The years stack up more cleanly at lower levels of depressive symptom severity than at higher levels; this may be reflected with a `decimal_year * dep_self_label_now` interaction term. There doesn't look to be evidence for a non-linear transformation of year.
 
 ## 1.5. Functional Form, Tested
 
@@ -369,7 +380,7 @@ Indeed, all transformations fit worse, across PIMH, PIH, and combined datasets. 
 
 ### 1.5.2. Relationship Between `dep_self_label_now` and `depression_sum`
 
-As shown above, descriptively, this relationship is clearly "S-shaped" in all years. The question is whether this S-shape is best represented by a linear relationship on the log scale, or a transformed relationship. In this chunk, we test alternative operationalizations, then inspect them visually and by examining differences in predictions.
+As shown above, descriptively, this relationship is clearly "S-shaped" in all years, and non-linear. In this chunk, we test alternative operationalizations, then inspect them visually and by examining differences in predictions.
 
 ```{r tff-dep, cache = T}
 # In PIMH
@@ -419,7 +430,7 @@ As shown above, descriptively, the relationship between year and self-labeling a
 covariates <- " + age + race_recoded + gender + education"
 
 # In PIMH
-tff_interaction_pimh <- compare_models(
+compare_models(
   pimh_c,
   list(
     "Best-Fit" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered" %+% covariates,
@@ -428,7 +439,7 @@ tff_interaction_pimh <- compare_models(
 )
 
 # In PIH
-tff_interaction_pih <- compare_models(
+compare_models(
   pih_c,
   list(
     "Best-Fit" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered" %+% covariates,
@@ -437,24 +448,16 @@ tff_interaction_pih <- compare_models(
 )
 
 # In combined data, allowing the severity curve to differ by study period, so the interaction is not confounded with the change between study periods
-tff_interaction_all <- compare_models(
+compare_models(
   all_c,
   list(
     "Best-Fit" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered" %+% covariates %+% " + dataset + poly(depression_sum, 3, raw = TRUE):dataset",
     "Interaction" = "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) * decimal_year_centered" %+% covariates %+% " + dataset + poly(depression_sum, 3, raw = TRUE):dataset"
   )
 )
-
-# Severity x year terms (log-odds) and p-values
-list(PIMH = tff_interaction_pimh, PIH = tff_interaction_pih, Combined = tff_interaction_all) %>%
-  map("coefficients") %>%
-  bind_rows(.id = "dataset") %>%
-  filter(model == "Interaction", str_detect(term, ":decimal_year_centered")) %>%
-  select(-model) %>%
-  show_table(digits = 6)
 ```
 
-The interaction term improves model fit in the combined data, but not in either dataset individually. If effects of `depression_sum` on `dep_self_label_now` are larger in earlier years in the combined data, this is likely an artifact of the two datasets; this trend does not appear in either dataset individually.
+The interaction term does not improve model fit. The relationship between `depression_sum` and `dep_self_label_now` does not appear to depend on `decimal_year_centered`. The weaker relationship at higher levels of symptom severity observed above is probably just a loss in precision due to smaller sample size.
 
 These analyses pretty conclusively support a best-fit model of `dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + decimal_year_centered + age + race_recoded + gender + education`. This section does not examine the functional form of covariates to the outcome; for the sake of parsimony in primary analyses, this is assumed to be linear. These relationships are investigated further in secondary analyses.
 
@@ -478,7 +481,7 @@ all_model_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE) + de
 primary <- list(
   PIMH = summarize_fit(pimh_c, pimh_model_base, years = 2016:2019),
   PIH = summarize_fit(pih_c, pih_model_base, years = 2019:2026),
-  Combined = summarize_fit(all_c, all_model_base, years = c(2016, 2026), plots = T) # Combined, best-fit (i.e., incorporates above considerations)
+  Combined = summarize_fit(all_c, all_model_base, years = c(2016, 2026), plots = T)
 )
 
 # PIMH
@@ -514,6 +517,7 @@ plot_curve(primary$Combined$curve)
 # Each covariate's interaction with year is added to the primary model, in each dataset
 # Combined data: the covariate's effect may also differ by study period (covariate:dataset), so moderation is not confounded with the change between study periods
 # Reason for visiting was asked in PIH only; gender is tested in each dataset separately, not combined (TGD participants were identified in PIH only)
+
 # Fit moderation models, keeping results only; plot data for the combined data only
 moderation <- expand_grid(
   dataset = c("PIMH", "PIH", "Combined"),
