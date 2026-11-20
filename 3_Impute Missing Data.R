@@ -1,7 +1,7 @@
 #### Set iterations
 # For data exploration, 5
 # For preregistered analyses, 100
-n_imputations = 5
+n_imputations = 100
 
 
 
