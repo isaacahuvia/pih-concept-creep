@@ -91,13 +91,17 @@ pool_rubin <- function(estimates, by) {
 }
 
 # Pooled coefficients (log-odds), p-values, and 95% CIs
-pooled_coefficients <- function(fit_models) {
+# cluster: optional vector of cluster IDs, one per row of the model data, for cluster-robust standard errors
+pooled_coefficients <- function(fit_models, cluster = NULL) {
 
   map(
     fit_models$analyses,
-    ~ summary(.x)$coefficients %>%
-      as_tibble(rownames = "term") %>%
-      select(term, estimate = Estimate, std.error = `Std. Error`)
+    ~ tibble(
+      term = names(coef(.x)),
+      estimate = coef(.x),
+      std.error = sqrt(diag(if (is.null(cluster)) vcov(.x) else sandwich::vcovCL(.x, cluster = cluster)))
+    ) %>%
+      filter(!is.na(estimate)) # Drop aliased terms, as summary() does
   ) %>%
     pool_rubin("term") %>%
     select(term, estimate, p.value, conf.low, conf.high)
@@ -181,7 +185,8 @@ risk_ratios <- function(
     variables_to_calculate = list(decimal_year_centered = 1),
     severity = c(5.5, 8.5, 12),
     moderator = NULL,
-    moderator_values = NULL
+    moderator_values = NULL,
+    cluster = NULL # Optional cluster IDs, as in pooled_coefficients()
 ) {
 
   grid_extra <- moderator_grid(fit_models, moderator, moderator_values)
@@ -195,6 +200,7 @@ risk_ratios <- function(
         .x,
         variables = !!variables_to_calculate,
         comparison = "lnratioavg",
+        vcov = !!(if (is.null(cluster)) TRUE else sandwich::vcovCL(.x, cluster = cluster)),
         newdata = datagrid(depression_sum = !!severity, !!!grid_extra, grid_type = "counterfactual"),
         by = !!c("depression_sum", moderator)
       )

@@ -1,0 +1,259 @@
+---
+title: "Robustness Check: Geographic Indicator Investigation"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options:
+  chunk_output_type: console
+---
+
+In the secondary analyses (`Main Analysis.Rmd` section 3.2), individual-level and area-level predictors of self-labeling seem to conflict: more liberal participants self-label more, but participants in more Democratic counties self-label less, and participants in rural areas self-label more. One possibility is that rural participants in this sample are unusual, for example mostly young students at rural colleges completing a school assignment.
+
+This document (1) describes who lives where, compared with the US population, (2) checks whether participants in each type of area are concentrated in a few ZIP codes, (3) repeats the 3.2 models for political ideology and the geographic indicators with standard errors clustered by county, (4) adjusts those models for age, reason for visiting, and demographics, and (5) fits individual ideology and the geographic indicators together. All analyses use PIH, the only period with reason for visiting. ZIP and county codes are never shown, only counts.
+
+Participants in the same county share its vote share and provider rate (and, largely, its ZIP-level income and rurality), so conventional standard errors for these terms treat thousands of shared values as independent. Sections 3-5 therefore cluster standard errors by county; participants with no county are their own cluster.
+
+```{r setup, message = F, warning = F}
+library(here)
+library(knitr)
+library(kableExtra)
+library(mice)
+library(marginaleffects)
+library(tidyverse)
+`%+%` <- paste0
+
+source(here("Helper Functions", "Analysis Functions.R"))
+
+pih_ni <- readRDS(here("Data", "PIH - 2019-Current", "pih_with_geo.rds"))
+pih_c <- readRDS(here("Data", "PIH - 2019-Current", "pih_completed.rds"))
+
+# PIH participants who answered the referral question (completed data keep the original row order)
+pih_c_observed <- map(pih_c, ~ filter(.x, !is.na(pih_ni$referral_recoded)))
+
+# County of each participant, for clustered standard errors (rows in the same order as the completed data)
+county <- coalesce(pih_ni$county, "none_" %+% seq_len(nrow(pih_ni)))
+county_observed <- county[!is.na(pih_ni$referral_recoded)]
+
+# As in Main Analysis.Rmd
+covariate_values <- list(
+  political_id_numeric = c(1, 4, 7), # Left, middle, right
+  median_family_income = c(5, 10, 20), # In $10,000s
+  dem_vote_share = c(.3, .5, .7),
+  urban_rural = c(1, 4, 7, 10), # Metro, micro, town, rural
+  provider_rate = c(100, 300, 500)
+)
+
+covariate_units <- c(
+  political_id_numeric = 1,
+  median_family_income = 1, # In $10,000s
+  dem_vote_share = .1, # i.e., 10 percentage points
+  urban_rural = 1,
+  provider_rate = 100 # 100 per 100,000
+)
+
+secondary_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE)"
+```
+
+## 1. Who Lives Where (Observed Data)
+
+```{r who-lives-where}
+# Describe participants within groups of an area-level variable
+describe_by <- function(data, group) {
+  data %>%
+    filter(!is.na({{ group }})) %>%
+    summarize(
+      n = n(),
+      `Mean age` = mean(age, na.rm = T),
+      `% age 18-22` = 100 * mean(age <= 22, na.rm = T),
+      `% school assignment` = 100 * mean(referral_recoded == "Assignment for school", na.rm = T),
+      `% bachelor's or more` = 100 * mean(education %in% c("Undergraduate Degree", "Graduate Degree"), na.rm = T),
+      `Mean ideology (1-7)` = mean(political_id_numeric, na.rm = T),
+      `Mean Dem. vote share` = mean(dem_vote_share, na.rm = T),
+      `Mean DASS-21` = mean(depression_sum, na.rm = T),
+      `% self-labeling` = 100 * mean(dep_self_label_now, na.rm = T),
+      .by = {{ group }}
+    ) %>%
+    arrange({{ group }})
+}
+
+pih_ni <- pih_ni %>%
+  mutate(
+    rurality = cut(urban_rural, c(0, 3, 6, 9, 10), labels = c("1-3: Metropolitan", "4-6: Micropolitan", "7-9: Small Town", "10: Rural")),
+    vote_share = cut(dem_vote_share, c(0, .4, .6, 1), labels = c("Under 40% Democratic", "40-60% Democratic", "Over 60% Democratic"))
+  )
+
+describe_by(pih_ni, rurality) %>%
+  kable(digits = 2, caption = "By rurality (RUCA)") %>%
+  kable_styling()
+
+describe_by(pih_ni, vote_share) %>%
+  kable(digits = 2, caption = "By county Democratic vote share") %>%
+  kable_styling()
+```
+
+### 1.1. Race and Ethnicity by Rurality, Compared with the US Population
+
+US shares are for nonmetro and metro counties in 2018 (USDA Economic Research Service, Charts of Note 99538). This sample's areas are classified by ZIP code (RUCA 1-3 metropolitan, 4-10 nonmetropolitan), which is close to, but not the same as, the county-based definition.
+
+```{r race-by-rurality}
+us_race <- tribble(
+  ~area,      ~group,                         ~us,
+  "Metro",    "White non-Hispanic",           57.3,
+  "Metro",    "Hispanic",                     19.8,
+  "Metro",    "Black non-Hispanic",           13.1,
+  "Metro",    "Asian, multiracial, or other", 9.8, # Remainder
+  "Nonmetro", "White non-Hispanic",           78.2,
+  "Nonmetro", "Hispanic",                     8.6,
+  "Nonmetro", "Black non-Hispanic",           7.8,
+  "Nonmetro", "Asian, multiracial, or other", 5.4 # Remainder
+)
+
+pih_ni %>%
+  filter(!is.na(urban_rural), !is.na(race_recoded)) %>%
+  mutate(
+    area = if_else(urban_rural <= 3, "Metro", "Nonmetro"),
+    group = fct_collapse(race_recoded, "Asian, multiracial, or other" = c("Asian non-Hispanic", "Multiracial, Other or Unknown"))
+  ) %>%
+  count(area, group) %>%
+  mutate(this_sample = 100 * n / sum(n), .by = area) %>%
+  left_join(us_race, by = c("area", "group")) %>%
+  select(area, group, n, this_sample, us) %>%
+  kable(digits = 1, col.names = c("Area", "Race/ethnicity", "n", "This sample (%)", "US (%)")) %>%
+  kable_styling()
+```
+
+## 2. Are Participants Concentrated in a Few Places? (Observed Data)
+
+If rural participants were mostly students at a few rural colleges, a few ZIP codes would account for many of them.
+
+```{r concentration}
+zip_counts <- pih_ni %>%
+  filter(!is.na(rurality), !is.na(zip)) %>%
+  count(rurality, zip, sort = T)
+
+# Share of each rurality group's participants in its 1, 5, and 10 largest ZIP codes
+zip_counts %>%
+  summarize(
+    zip_codes = n(),
+    `Largest (n)` = max(n),
+    `Largest 1 (%)` = 100 * sum(head(n, 1)) / sum(n),
+    `Largest 5 (%)` = 100 * sum(head(n, 5)) / sum(n),
+    `Largest 10 (%)` = 100 * sum(head(n, 10)) / sum(n),
+    .by = rurality
+  ) %>%
+  arrange(rurality) %>%
+  kable(digits = 1, caption = "Share of participants in the largest ZIP codes") %>%
+  kable_styling()
+```
+
+## 3. Section 3.2 Models with County-Clustered Standard Errors
+
+The models from `Main Analysis.Rmd` section 3.2 (cubic DASS plus one characteristic), with conventional and county-clustered standard errors. Estimates are the same; only the uncertainty changes. Section 3.2 adjusts p-values across all 17 of its terms; these are unadjusted.
+
+```{r clustered-secondary}
+# Fit each model once (one at a time, keeping results only); summarize with each type of standard error
+clustered_secondary <- tibble(covariate = names(covariate_values)) %>%
+  mutate(results = map(covariate, function(covariate) {
+    fit <- fit_models(pih_c, secondary_base %+% " + " %+% covariate)
+    clusters <- list(Conventional = NULL, Clustered = county)
+    list(
+      coefficients = map(clusters, ~ pooled_coefficients(fit, .x) %>% filter(term == covariate) %>% odds_ratios(covariate_units[[covariate]])),
+      ratios = map(clusters, ~ risk_ratios(fit, set_names(list(range(covariate_values[[covariate]])), covariate), severity = 8.5, cluster = .x))
+    )
+  }))
+
+clustered_secondary %>%
+  mutate(coefficients = map(results, ~ bind_rows(.x$coefficients, .id = "standard_errors"))) %>%
+  select(covariate, coefficients) %>%
+  unnest(coefficients) %>%
+  select(covariate, standard_errors, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 3, caption = "Odds ratio per unit") %>%
+  kable_styling()
+
+clustered_secondary %>%
+  mutate(ratios = map(results, ~ bind_rows(.x$ratios, .id = "standard_errors"))) %>%
+  select(covariate, ratios) %>%
+  unnest(ratios) %>%
+  select(covariate, standard_errors, contrast, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 3, caption = "Risk ratio, highest vs. lowest value, at DASS = 8.5") %>%
+  kable_styling()
+```
+
+## 4. Section 3.2 Models, Adjusted for Age, Reason for Visiting, and Demographics
+
+Each model adds one characteristic to cubic DASS, as in section 3.2, then adds age and reason for visiting, then all demographics. Odds ratios are per unit (as in `Main Analysis.Rmd`); risk ratios compare the highest and lowest values at DASS = 8.5. Standard errors are clustered by county.
+
+```{r adjusted-secondary}
+# Fit one model; keep the characteristic's odds ratios and its high vs. low risk ratio
+fit_characteristic <- function(data, cluster, formula, covariate) {
+  fit <- fit_models(data, formula)
+  list(
+    coefficients = pooled_coefficients(fit, cluster) %>%
+      filter(str_starts(term, fixed(covariate))) %>%
+      odds_ratios(covariate_units[[covariate]]),
+    ratios = risk_ratios(fit, set_names(list(range(covariate_values[[covariate]])), covariate), severity = 8.5, cluster = cluster)
+  )
+}
+
+adjustments <- tribble(
+  ~adjustment,                                   ~data,          ~cluster,         ~extra,
+  "As in 3.2",                                   pih_c,          county,           "",
+  "Age + referral",                              pih_c,          county,           " + age + referral_recoded",
+  "Age + referral (observed referral)",          pih_c_observed, county_observed,  " + age + referral_recoded",
+  "All demographics + referral",                 pih_c,          county,           " + age + race_recoded + gender + education + referral_recoded"
+)
+
+adjusted <- expand_grid(covariate = names(covariate_values), adjustments) %>%
+  mutate(
+    adjustment = fct(adjustment, levels = adjustments$adjustment),
+    results = pmap(list(data, cluster, extra, covariate), ~ fit_characteristic(..1, ..2, secondary_base %+% ..3 %+% " + " %+% ..4, ..4))
+  )
+
+adjusted %>%
+  mutate(coefficients = map(results, "coefficients")) %>%
+  select(covariate, adjustment, coefficients) %>%
+  unnest(coefficients) %>%
+  select(covariate, adjustment, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 3, caption = "Odds ratio per unit") %>%
+  kable_styling()
+
+adjusted %>%
+  mutate(ratios = map(results, "ratios")) %>%
+  select(covariate, adjustment, ratios) %>%
+  unnest(ratios) %>%
+  select(covariate, adjustment, contrast, estimate, conf.low, conf.high) %>%
+  kable(digits = 3, caption = "Risk ratio, highest vs. lowest value, at DASS = 8.5") %>%
+  kable_styling()
+```
+
+## 5. Individual Ideology and Geographic Indicators Together
+
+If the conflict comes from area-level indicators standing in for individual characteristics (or the reverse), fitting them together should shrink one or the other. The last model uses only participants who reported both their ideology and their reason for visiting. Standard errors are clustered by county.
+
+```{r joint-model}
+geographic <- " + political_id_numeric + median_family_income + dem_vote_share + urban_rural + provider_rate"
+
+# PIH participants who reported both ideology and reason for visiting
+observed_both <- !is.na(pih_ni$referral_recoded) & !is.na(pih_ni$political_id_numeric)
+pih_c_observed_both <- map(pih_c, ~ filter(.x, observed_both))
+
+joint_models <- tribble(
+  ~model,                                                 ~data,               ~cluster,               ~extra,
+  "Together",                                             pih_c,               county,                 "",
+  "Together + all demographics + referral",               pih_c,               county,                 " + age + race_recoded + gender + education + referral_recoded",
+  "Together + all demographics + referral (observed)",    pih_c_observed_both, county[observed_both],  " + age + race_recoded + gender + education + referral_recoded"
+) %>%
+  mutate(
+    model = fct(model, levels = model),
+    coefficients = pmap(list(data, cluster, extra), ~ fit_models(..1, secondary_base %+% geographic %+% ..3) %>% pooled_coefficients(..2))
+  )
+
+joint_models %>%
+  select(model, coefficients) %>%
+  unnest(coefficients) %>%
+  filter(term %in% names(covariate_units)) %>%
+  mutate(across(c(estimate, conf.low, conf.high), ~ exp(.x * covariate_units[term]))) %>%
+  select(term, model, estimate, conf.low, conf.high, p.value) %>%
+  arrange(term, model) %>%
+  kable(digits = 3, caption = "Odds ratio per unit, all characteristics in one model") %>%
+  kable_styling()
+```
