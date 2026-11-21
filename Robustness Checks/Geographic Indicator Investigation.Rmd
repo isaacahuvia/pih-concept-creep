@@ -18,6 +18,7 @@ library(knitr)
 library(kableExtra)
 library(mice)
 library(marginaleffects)
+library(sandwich)
 library(tidyverse)
 `%+%` <- paste0
 
@@ -51,6 +52,37 @@ covariate_units <- c(
 )
 
 secondary_base <- "dep_self_label_now ~ poly(depression_sum, 3, raw = TRUE)"
+
+# Script-specific helpers: as pooled_coefficients() and risk_ratios() in Analysis Functions.R, but with standard
+# errors clustered by county (sandwich::vcovCL). cluster: one cluster ID per row of the model data
+clustered_coefficients <- function(fit_models, cluster) {
+  map(
+    fit_models$analyses,
+    ~ tibble(term = names(coef(.x)), estimate = coef(.x), std.error = sqrt(diag(vcovCL(.x, cluster = cluster))))
+  ) %>%
+    pool_rubin("term") %>%
+    select(term, estimate, p.value, conf.low, conf.high)
+}
+
+clustered_risk_ratios <- function(fit_models, variables_to_calculate, cluster, severity = 8.5) {
+  map(
+    fit_models$analyses,
+    ~ rlang::inject( # As in risk_ratios(): marginaleffects needs the values themselves inside map()
+      avg_comparisons(
+        .x,
+        variables = !!variables_to_calculate,
+        comparison = "lnratioavg",
+        vcov = !!vcovCL(.x, cluster = cluster),
+        newdata = datagrid(depression_sum = !!severity, grid_type = "counterfactual"),
+        by = "depression_sum"
+      )
+    ) %>%
+      data.frame()
+  ) %>%
+    pool_rubin(c("term", "contrast", "depression_sum")) %>%
+    mutate(across(c(estimate, conf.low, conf.high), exp)) %>%
+    select(term, contrast, depression_sum, estimate, conf.low, conf.high, p.value)
+}
 ```
 
 ## 1. Who Lives Where (Observed Data)
@@ -154,10 +186,11 @@ The models from `Main Analysis.Rmd` section 3.2 (cubic DASS plus one characteris
 clustered_secondary <- tibble(covariate = names(covariate_values)) %>%
   mutate(results = map(covariate, function(covariate) {
     fit <- fit_models(pih_c, secondary_base %+% " + " %+% covariate)
-    clusters <- list(Conventional = NULL, Clustered = county)
+    variables <- set_names(list(range(covariate_values[[covariate]])), covariate)
     list(
-      coefficients = map(clusters, ~ pooled_coefficients(fit, .x) %>% filter(term == covariate) %>% odds_ratios(covariate_units[[covariate]])),
-      ratios = map(clusters, ~ risk_ratios(fit, set_names(list(range(covariate_values[[covariate]])), covariate), severity = 8.5, cluster = .x))
+      coefficients = list(Conventional = pooled_coefficients(fit), Clustered = clustered_coefficients(fit, county)) %>%
+        map(~ .x %>% filter(term == covariate) %>% odds_ratios(covariate_units[[covariate]])),
+      ratios = list(Conventional = risk_ratios(fit, variables, severity = 8.5), Clustered = clustered_risk_ratios(fit, variables, county))
     )
   }))
 
@@ -187,10 +220,10 @@ Each model adds one characteristic to cubic DASS, as in section 3.2, then adds a
 fit_characteristic <- function(data, cluster, formula, covariate) {
   fit <- fit_models(data, formula)
   list(
-    coefficients = pooled_coefficients(fit, cluster) %>%
+    coefficients = clustered_coefficients(fit, cluster) %>%
       filter(str_starts(term, fixed(covariate))) %>%
       odds_ratios(covariate_units[[covariate]]),
-    ratios = risk_ratios(fit, set_names(list(range(covariate_values[[covariate]])), covariate), severity = 8.5, cluster = cluster)
+    ratios = clustered_risk_ratios(fit, set_names(list(range(covariate_values[[covariate]])), covariate), cluster)
   )
 }
 
@@ -244,7 +277,7 @@ joint_models <- tribble(
 ) %>%
   mutate(
     model = fct(model, levels = model),
-    coefficients = pmap(list(data, cluster, extra), ~ fit_models(..1, secondary_base %+% geographic %+% ..3) %>% pooled_coefficients(..2))
+    coefficients = pmap(list(data, cluster, extra), ~ fit_models(..1, secondary_base %+% geographic %+% ..3) %>% clustered_coefficients(..2))
   )
 
 joint_models %>%
