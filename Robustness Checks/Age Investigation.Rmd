@@ -6,7 +6,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-Two age findings in `Main Analysis.Rmd` prompt this investigation:
+Section 0 describes how age, symptom severity, and self-labeling relate in the observed data, in both study periods. Two age findings in `Main Analysis.Rmd` then prompt the rest of this investigation:
 
 1. In the secondary analyses (PIH), older participants self-label more at the same symptom severity (risk ratio for age 60 vs. 20 at DASS = 8.5: about 1.57).
 2. In moderation analyses, the age x year interaction depends on whether age is allowed to differ by dataset.
@@ -19,6 +19,7 @@ A likely confounder is reason for visiting the website: younger participants are
 library(here)
 library(knitr)
 library(kableExtra)
+library(scales)
 library(mice)
 library(marginaleffects)
 library(tidyverse)
@@ -26,7 +27,9 @@ library(tidyverse)
 
 source(here("Helper Functions", "Analysis Functions.R"))
 
+pimh_ni <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_with_geo.rds"))
 pih_ni <- readRDS(here("Data", "PIH - 2019-Current", "pih_with_geo.rds"))
+all_ni <- bind_rows(pimh_ni, pih_ni)
 pimh_c <- readRDS(here("Data", "PIMH - 2012-2019", "pimh_completed.rds"))
 pih_c <- readRDS(here("Data", "PIH - 2019-Current", "pih_completed.rds"))
 all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
@@ -35,7 +38,76 @@ all_c <- readRDS(here("Data", "PIMH + PIH Combined", "all_completed.rds"))
 pih_c_observed <- map(pih_c, ~ filter(.x, !is.na(pih_ni$referral_recoded)))
 ```
 
-## 0. Age and Reason for Visiting (Observed Data)
+## 0. Age, Symptom Severity, and Self-Labeling (Observed Data)
+
+```{r descriptive-setup}
+study_period_labels <- c("PIMH" = "First Study Period (2016-2019)", "PIH" = "Second Study Period (2019-2026)")
+
+age_descriptives <- all_ni %>%
+  filter(!is.na(age)) %>%
+  mutate(
+    study_period = fct(study_period_labels[dataset], levels = study_period_labels),
+    age_group = cut(age, c(17, 19, 22, 24, 29, 39, 49, 59, Inf), labels = c("18-19", "20-22", "23-24", "25-29", "30-39", "40-49", "50-59", "60+"))
+  )
+```
+
+### 0.1. Symptom Severity and Self-Labeling, by Age
+
+```{r descriptive-by-age}
+age_descriptives %>%
+  mutate(`Percent Self-Labeling` = 100 * dep_self_label_now, `DASS-21 Depression Sum Score` = depression_sum) %>%
+  pivot_longer(c(`Percent Self-Labeling`, `DASS-21 Depression Sum Score`), names_to = "measure", values_to = "value") %>%
+  summarize(
+    estimate = mean(value, na.rm = T),
+    se = sd(value, na.rm = T) / sqrt(sum(!is.na(value))),
+    .by = c(study_period, measure, age_group)
+  ) %>%
+  mutate(measure = fct(measure, levels = c("Percent Self-Labeling", "DASS-21 Depression Sum Score"))) %>%
+  ggplot(aes(x = age_group, y = estimate, color = measure, group = measure)) +
+  geom_line(linewidth = .5) +
+  geom_pointrange(aes(ymin = estimate - qnorm(.975) * se, ymax = estimate + qnorm(.975) * se), size = .3) +
+  facet_grid(measure ~ study_period, scales = "free_y", switch = "y") +
+  scale_color_manual(values = c("Percent Self-Labeling" = "#2a78d6", "DASS-21 Depression Sum Score" = "#eb6834"), guide = "none") +
+  labs(x = "Age", y = NULL) +
+  theme_minimal() +
+  theme(strip.placement = "outside", panel.grid.major.x = element_blank())
+```
+
+### 0.2. Symptom Severity by Age, Compared with the US Population
+
+NHANES (August 2021-August 2023) reports the percentage of US adults with PHQ-9 scores of 10 or more, by age (NCHS Data Brief No. 527). This sample uses the DASS-21, so the comparison is of the age pattern, not the level: the percentage with DASS-21 depression scores of 7 or more ("moderate" or worse) in this sample during the same years, each relative to ages 20-39.
+
+```{r symptoms-vs-nhanes}
+all_ni %>%
+  filter(year %in% 2021:2023, age >= 20) %>%
+  mutate(age_group = cut(age, c(19, 39, 59, Inf), labels = c("20-39", "40-59", "60+"))) %>%
+  summarize(this_sample = 100 * mean(depression_sum >= 7, na.rm = T), n = n(), .by = age_group) %>%
+  arrange(age_group) %>%
+  mutate(nhanes = c(16.6, 10.8, 8.7)) %>% # NHANES prevalence (%) by age group
+  mutate(across(c(this_sample, nhanes), ~ .x / first(.x), .names = "{.col}_relative")) %>%
+  select(age_group, n, this_sample, this_sample_relative, nhanes, nhanes_relative) %>%
+  kable(digits = 2, col.names = c("Age", "n (this sample)", "% DASS-21 7+", "Relative", "NHANES % PHQ-9 10+", "Relative")) %>%
+  kable_styling()
+```
+
+### 0.3. Self-Labeling by Symptom Severity and Age
+
+```{r labeling-by-severity-and-age}
+age_descriptives %>%
+  mutate(age_group = fct_collapse(age_group, "18-22" = c("18-19", "20-22"), "23-29" = c("23-24", "25-29"), "40+" = c("40-49", "50-59", "60+"))) %>%
+  summarize(self_labeling = mean(dep_self_label_now, na.rm = T), n = n(), .by = c(study_period, age_group, depression_sum)) %>%
+  ggplot(aes(x = depression_sum, y = self_labeling, color = age_group)) +
+  geom_line() +
+  geom_point(aes(size = n), show.legend = F) +
+  facet_wrap(~ study_period) +
+  scale_y_continuous(labels = label_percent(), limits = c(0, 1)) +
+  scale_size_area(max_size = 2.5) +
+  labs(x = "DASS-21 Depression Sum Score", y = "Percent Self-Labeling (Observed)", color = "Age") +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+### 0.4. Age and Reason for Visiting
 
 ```{r age-by-referral}
 pih_ni %>%
