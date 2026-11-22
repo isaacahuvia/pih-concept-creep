@@ -210,6 +210,12 @@ US Norms (2012): Sinclair et al. (2012), Eval Health Prof 35:259-279
 dass21_dep_compare(all_ni, depression_sum)
 ```
 
+This is a large sample that is disproportionately young, depressed, female, liberal, and metropolitan. Approx. 75% visited the website for school, but a significant number of participants visited for work or other reasons.
+
+While participants are disproportionately depressed, the more important thing for our analyses (which condition on symptom severity) is that our sample covers the full range of depressive symptoms per the DASS-21. This is very much the case.
+
+We will reckon with the uniqueness of our sample in our paper, but to head-off any concerns you might have at this stage: our findings are not moderated by reason for visiting website.
+
 ## 1.3. Trends in Outcomes
 
 Trends in self-labeling and depressive symptom severity over time in the raw data; this is important context for our research questions, and it also allows us to examine the functional form of our models below.
@@ -267,7 +273,7 @@ From these plots a few things are apparent:
 * Depression symptom severity in our sample matches nationwide trends in young adults; rising over time, peaking during the pandemic, and reducing afterwards.
 * Depression self-labeling follows a similar trend. However, if you look closely, you can see the self-labeling trends are slightly tilted upwards, i.e., have a stronger slope; that is reflected in the modeling below.
 
-These plots give us a good sense of general trends, but it's hard to examine functional form from this. See `Examine Functional Form.Rmd` for plots and tests regarding the relationship between primary variables.
+These plots give us a good sense of general trends, but it's hard to examine functional form from this. See `Examine Functional Form.Rmd` for plots and tests regarding the relationship between primary variables. To summarize: the relationship between time and self-labeling is linear, while the relationship symptom severity and self-labeling is broadly linear on the logit scale, but improved by the addition of quadratic and cubic terms. Results below are robust to this modeling choice, and robustness checks are available in `Robustness Checks/`.
 
 # 2. Primary Analysis
 
@@ -277,7 +283,17 @@ Per the analyses in `Examine Functional Form.Rmd`, the relationship between time
 
 For the primary analysis, we use the best-fit functions above. We report findings from simpler, preregistered models in `Robustness Checks/Preregistered Models.Rmd`. Findings are robust across operationalizations.
 
+All analyses are run with complete cases on primary variables, and missing data on secondary variables is imputed with multiple imputation by chained equations (100 imputations). Findings are robust to imputation, as detailed in `Complete Cases.Rmd`.
+
 ## 2.1. Primary Regression Results
+
+What follows are odds ratios, predicted probabilities, and risk ratios for each of the following models:
+
+* PIMH data only
+* PIH data only
+* Combined dataset, with a `+ dataset` term to account for the study period differences observed above
+
+You can skip to the visualizations in the following section to get a quick sense of the results. In the paper, we will primarily discuss findings in terms of risk ratios.
 
 ```{r primary-regressions, cache = T}
 # Save baseline model formulas
@@ -317,9 +333,13 @@ plot_trend(primary$Combined$trend)
 plot_curve(primary$Combined$curve)
 ```
 
+The first figure illustrates the linear effect of time on self-labeling, conditional on symptom severity. The second figure illustrates the change in the relationship between depressive symptom severity and self-labeling from the beginning to the end of the study. (These are the cubic logistic curves, although you can see that they do not differ dramatically from linear logistic curves.)
+
 # 3. Secondary Analyses
 
 ## 3.1. Moderation of Primary Analyses
+
+Moderation is tested primarily by the statistical significance of the odds ratios of moderator terms. These _p_-values are adjusted using the Benjamini-Hochberg method. No adjusted _p_-values are significant, i.e., we do not find evidence of moderation by any participant characteristic. (Surprisingly, no _p_-value is significant even before adjustment! This is quite surprising given our sample size and suggests pretty strongly that there is no moderation in this effect, i.e., concept creep occurs at similar rates across all study groups.)
 
 ```{r moderation, cache = T}
 # Each covariate's interaction with year is added to the primary model, in each dataset
@@ -352,11 +372,11 @@ moderation %>%
   show_table()
 ```
 
-We find no evidence for moderation, i.e., concept creep occurs at similar rates across all study groups.
-
 ## 3.2. Concept Breadth by Participant Characteristics
 
 These tests use PIH data only, since (a) some characteristics were measured differently across study periods and (b) we aren't interested in change over time, so using the most recent study period alone is sensible.
+
+Odds ratios and risk ratios are provided in the tables below. Many are significant; you can look below to figures that illustrate these effects.
 
 ```{r cb-by-char, cache = T}
 # Baseline model for these tests
@@ -386,7 +406,21 @@ iwalk(
 )
 ```
 
-We see significant differences in concept breadth (i.e., propensity to self-label as having depression at a given level of depressive symptom severity) by all participant characteristics save for treatment access. Some of these trends are in expected directions (e.g., higher propensity to self-label in cisgender women and TGD participants, lower propensity to self-label among Asian and politically conservative participants). Others, however, are in unexpected directions (younger participants had a lower propensity to self-label; participants in more rural, conservative areas had a higher propensity to self-label). While these unexpected results may be due to selection mechanisms (e.g., older participants being more likely to seek out the test because they thought they might have depression, while younger participants were more often students doing the test for an assignment), they are remarkably robust to adjustment for covariates like referral source.
+We see significant differences in propensity to self-label, after controlling for depressive symptom severity, by all participant characteristics save for treatment access.
+
+**Age:** This is probably the most surprising effect, as it cuts against what people assume to be true about "young people these days." In fact, by the raw numbers, young people do self-label (slightly) more than older adults in this sample. However, they are also significantly more depressed. Once you adjust for depressive symptoms, younger people are less likely to self-label. Even this was surprising to me, since we know that younger people tend to have a broader sense of "what counts" as depression. But no matter how you slice it (see `Age Investigation.Rmd`) - controlling for referral source, looking within younger or older age brackets, etc. - this effect holds up. In fact, I examined this effect in an independent sample of ~4,000 adults 18-29 recruited on CloudResearch, and the effect replicates exactly. We will have to think this through. My first thought is labels are sticky and can accumulate over the course of one's life; if someone identifies as "struggling with depression" at one point, they may continue to think of themselves that way even if their symptoms have improved in the future. Thus, while our sample's 20-year-olds may be more likely to self-identify as having depression than our sample's 40-year-olds were at their age, they are less likely to in this moment.
+
+**Race/Ethnicity:** These are expected effects that follow known differences in concept breadth and stigma across cultures.
+
+**Gender:** Likewise, these effects replicate those of previous studies - although it's not immediately clear to me why these differences should be as strong as they are (particularly the difference between trans/gender-diverse adults and cisgender women).
+
+**Education:** I'm not sure if this has been examined before. This feels intuitive to me, especially given the overlap with political ideology, below.
+
+**Political Ideology:** This tracks expectations based on the relationship between political ideology and concept breadth, stigma.
+
+**ZIP-Based Predictors:** Some of these run in interesting directions - for example, while more liberal participants are more likely to self-label, those in more liberal areas are less likely. This is mainly due to the confounding effect of race/ethnicity; White participants are more likely to self-label, and more likely to live in rural areas. These effects are examined further in `Robustness Checks/Geographic Indicator Investigation.Rmd`.
+
+**Reason for Visiting Website:** This was my biggest concern for this study's external validity. (Specifically: That effects exist in users visiting the website for school that don't exist in other groups.) It's reassuring that this variable has little to do with self-labeling (a significant effect here, but a very small one), and is not a moderator of our main concept creep analysis. This doesn't mean that our sample of Project Implicit - Health visitors is perfectly representative of the broader U.S., but it does address one external validity concern.
 
 # 4. Robustness Checks
 
@@ -395,3 +429,4 @@ Robustness checks are reported in the folder `Robustness Checks/`. They include:
 * `Preregistered Models.Rmd`: Primary analyses using simple preregistered models
 * `Complete Cases.Rmd`: Primary analyses using complete cases
 * `Age Investigation.Rmd`: Robustness checks and a replication of age findings
+* `Geographic Indicator Investigation.Rmd`: Robustness checks around ZIP-based secondary analyses
